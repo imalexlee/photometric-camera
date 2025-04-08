@@ -10,3 +10,8 @@ struct SwapchainContext {
 };
 
 [[nodiscard]] SwapchainContext swapchain_context_create(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface, GLFWwindow* window);
+
+void swapchain_context_destroy(SwapchainContext* swapchain_context, VkDevice device);
+
+void swapchain_context_recreate(SwapchainContext* swapchain_context, VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface,
+                                GLFWwindow* window);

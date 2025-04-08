@@ -52,3 +52,19 @@ SwapchainContext swapchain_context_create(VkPhysicalDevice physical_device, VkDe
 
     return swapchain_context;
 }
+
+void swapchain_context_destroy(SwapchainContext* swapchain_context, VkDevice device) {
+    swapchain_context->images.clear();
+    for (VkImageView image_view : swapchain_context->image_views) {
+        vkDestroyImageView(device, image_view, nullptr);
+    }
+    swapchain_context->image_views.clear();
+    vkDestroySwapchainKHR(device, swapchain_context->swapchain, nullptr);
+}
+
+void swapchain_context_recreate(SwapchainContext* swapchain_context, VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface,
+                                GLFWwindow* window) {
+    vkDeviceWaitIdle(device);
+    swapchain_context_destroy(swapchain_context, device);
+    *swapchain_context = swapchain_context_create(physical_device, device, surface, window);
+}
