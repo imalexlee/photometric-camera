@@ -13,9 +13,11 @@ struct Frame {
     VkSemaphoreSubmitInfoKHR     wait_semaphore_submit_info{};
     VkSemaphoreSubmitInfoKHR     signal_semaphore_submit_info{};
     VkSubmitInfo2                submit_info_2{};
-    VkImageMemoryBarrier2        end_render_image_memory_barrier{};
-    VkDependencyInfoKHR          dependency_info{};
+    VkImageMemoryBarrier2        present_image_memory_barrier{};
+    VkDependencyInfoKHR          present_dependency_info{};
+    VkImageMemoryBarrier2        draw_image_memory_barrier{};
+    VkDependencyInfoKHR          draw_dependency_info{};
 };
 
 std::vector<Frame> frames_create(VkDevice device, VkCommandPool command_pool, std::span<const VkImageView> frame_image_views,
-                                 std::span<const VkImage> frame_images, uint32_t queue_family_index);
+                                 std::span<const VkImage> frame_images, uint32_t queue_family_index, VkImageView msaa_image_view);

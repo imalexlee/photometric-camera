@@ -67,8 +67,8 @@ VkDevice create_logical_device(VkPhysicalDevice physical_device, uint32_t queue_
     VkDeviceQueueCreateInfo queue_ci           = vk_lib::device_queue_create_info(queue_family, 1, queue_priorities);
     std::array              queue_create_infos = {queue_ci};
 
-    std::array device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-                                    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME};
+    std::array device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+                                    VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME};
 
     VkPhysicalDeviceVulkan13Features vk_1_3_features{};
     vk_1_3_features.sType                                = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;

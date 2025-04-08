@@ -8,5 +8,8 @@
     <clangFormatSettings>
       <option name="ENABLED" value="true" />
     </clangFormatSettings>
+    <codeStyleSettings language="Glsl">
+      <option name="SPACE_BEFORE_COLON" value="false" />
+    </codeStyleSettings>
   </code_scheme>
 </component>

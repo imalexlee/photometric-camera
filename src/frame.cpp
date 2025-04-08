@@ -1,16 +1,12 @@
 #include "frame.h"
 
 std::vector<Frame> frames_create(VkDevice device, VkCommandPool command_pool, std::span<const VkImageView> frame_image_views,
-                                 std::span<const VkImage> frame_images, uint32_t queue_family_index) {
+                                 std::span<const VkImage> frame_images, uint32_t queue_family_index, VkImageView msaa_image_view) {
     std::vector<Frame> frames;
     frames.resize(frame_image_views.size());
 
     for (uint32_t i = 0; i < frame_image_views.size(); i++) {
         Frame* frame = &frames[i];
-
-        VkImageView frame_image_view = frame_image_views[i];
-        frame->attachment_info       = vk_lib::rendering_attachment_info(frame_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                                         VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE);
 
         VkCommandBufferAllocateInfo command_buffer_ai = vk_lib::command_buffer_allocate_info(command_pool);
         vkAllocateCommandBuffers(device, &command_buffer_ai, &frame->command_buffer);
@@ -33,12 +29,28 @@ std::vector<Frame> frames_create(VkDevice device, VkCommandPool command_pool, st
 
         const VkImageSubresourceRange subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
-        VkImage frame_image                    = frame_images[i];
-        frame->end_render_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        VkImage     frame_image      = frame_images[i];
+        VkImageView frame_image_view = frame_image_views[i];
+
+        VkClearValue clear_value{};
+        clear_value.color      = {0, 0, 0, 0};
+        frame->attachment_info = vk_lib::rendering_attachment_info(
+            msaa_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE, &clear_value,
+            VK_RESOLVE_MODE_AVERAGE_BIT, frame_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+        frame->draw_image_memory_barrier = vk_lib::image_memory_barrier_2(
             frame_image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, queue_family_index, queue_family_index,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_NONE);
-        frame->dependency_info = vk_lib::dependency_info(&frame->end_render_image_memory_barrier, nullptr, nullptr);
+
+        frame->draw_dependency_info = vk_lib::dependency_info(&frame->draw_image_memory_barrier, nullptr, nullptr);
+
+        frame->present_image_memory_barrier = vk_lib::image_memory_barrier_2(
+            frame_image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, queue_family_index, queue_family_index,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_NONE);
+
+        frame->present_dependency_info = vk_lib::dependency_info(&frame->present_image_memory_barrier, nullptr, nullptr);
     }
 
     return frames;
