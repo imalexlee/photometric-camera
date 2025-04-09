@@ -22,6 +22,8 @@
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #include <vk_mem_alloc.h>
 
+#include <cgltf.h>
+
 #define VK_CHECK(x)                                                                                                                                  \
     do {                                                                                                                                             \
         VkResult err = x;                                                                                                                            \
