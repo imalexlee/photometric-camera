@@ -33,7 +33,7 @@
         }                                                                                                                                            \
     } while (0)
 
-[[noreturn]] inline void abort_message(std::string_view message) {
+[[noreturn]] inline void abort_message(const std::string_view message) {
     std::cerr << message << std::endl;
     std::abort();
 }
