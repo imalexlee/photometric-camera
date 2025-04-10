@@ -13,18 +13,29 @@ FetchContent_Declare(
         GIT_TAG acbb9b7275864ab84f52f7c1f2889dced77bb4e3
 )
 
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW docs" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable GLFW examples" FORCE)
 FetchContent_Declare(
         GLFW
         URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
 )
 
+set(KTX_FEATURE_TESTS OFF CACHE BOOL "Disable KTX tests" FORCE)
+set(KTX_FEATURE_TOOLS OFF CACHE BOOL "Disable KTX tools" FORCE)
+set(KTX_FEATURE_TOOLS_CTS OFF CACHE BOOL "Disable KTX CTS tests" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+FetchContent_Declare(
+        ktx
+        GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
+        GIT_TAG beef80159525d9fb7abb8645ea85f4c4f6842e8f
+        GIT_SUBMODULES ""
+)
+
 FetchContent_MakeAvailable(vk-lib)
 FetchContent_MakeAvailable(GLFW)
+FetchContent_MakeAvailable(ktx)
 
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-
-target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC vk-lib glfw)
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC vk-lib glfw ktx)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC src vendor)

@@ -2,6 +2,9 @@
 
 #include <stb_image.h>
 
+#define KHRONOS_STATIC
+#include <ktx.h>
+
 static std::string cgltf_result_to_string(cgltf_result result) {
     switch (result) {
     case cgltf_result_success:
@@ -72,16 +75,13 @@ struct GltfNode {
 };
 
 // load gltf images, compress them, then create vulkan images and images views from them
-void load_gltf_images(cgltf_data* cgltf_data) {
+void load_gltf_images(const cgltf_data* cgltf_data) {
     for (uint32_t i = 0; i < cgltf_data->images_count; i++) {
-        int width, height, original_component_count;
-        // std::string    bruh     = cgltf_data->images[i].uri;
+        int                      width, height, original_component_count;
         const cgltf_buffer_view* buffer_view = cgltf_data->images[i].buffer_view;
 
         unsigned char* img_data = stbi_load_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset, buffer_view->size,
                                                         &width, &height, &original_component_count, 4);
-
-        // unsigned char* img_data = stbi_load(cgltf_data->images[i].uri, &width, &height, &original_component_count, 4);
 
         if (img_data == nullptr) {
             abort_message(stbi_failure_reason());
