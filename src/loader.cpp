@@ -128,8 +128,8 @@ void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, ui
 }
 
 // load gltf images, compress them, then create vulkan images and images views from them
-void load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device, VmaAllocator allocator,
-                      VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index, std::vector<AllocatedImage>* images) {
+std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device, VmaAllocator allocator,
+                                             VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index) {
     bool check_cache    = false;
     bool write_to_cache = false;
     if (!load_options->cache_dir.empty()) {
@@ -152,8 +152,8 @@ void load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_d
     VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
     VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &transfer_fence));
 
-    images->clear();
-    images->reserve(cgltf_data->images_count);
+    std::vector<AllocatedImage> gltf_images;
+    gltf_images.reserve(cgltf_data->images_count);
     for (uint32_t i = 0; i < cgltf_data->images_count; i++) {
 
         // 1. pull formats from images
@@ -340,6 +340,8 @@ void load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_d
         vkFreeCommandBuffers(device, command_pool, 1, &cmd_buf);
 
         ktxTexture2_Destroy(ktx_texture);
+
+        gltf_images.push_back(new_texture);
     }
 
     // 10. cleanup
@@ -347,6 +349,98 @@ void load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_d
         vmaDestroyBuffer(allocator, staging_buffer, staging_allocation);
     }
     vkDestroyFence(device, transfer_fence, nullptr);
+
+    return gltf_images;
+}
+
+std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, VkDevice device) {
+    std::vector<VkSampler> samplers;
+    samplers.reserve(cgltf_data->samplers_count);
+
+    for (uint32_t i = 0; i < cgltf_data->samplers_count; i++) {
+        const cgltf_sampler* cgltf_sampler = &cgltf_data->samplers[i];
+
+        VkSamplerCreateInfo sampler_info = {};
+        sampler_info.sType               = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+        switch (cgltf_sampler->mag_filter) {
+        case cgltf_filter_type_nearest:
+        case cgltf_filter_type_nearest_mipmap_nearest:
+        case cgltf_filter_type_nearest_mipmap_linear:
+            sampler_info.magFilter = VK_FILTER_NEAREST;
+            break;
+        default:
+            sampler_info.magFilter = VK_FILTER_LINEAR;
+            break;
+        }
+
+        switch (cgltf_sampler->min_filter) {
+        case cgltf_filter_type_nearest:
+        case cgltf_filter_type_nearest_mipmap_nearest:
+            sampler_info.minFilter  = VK_FILTER_NEAREST;
+            sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            break;
+
+        case cgltf_filter_type_linear:
+        case cgltf_filter_type_linear_mipmap_nearest:
+            sampler_info.minFilter  = VK_FILTER_LINEAR;
+            sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            break;
+
+        case cgltf_filter_type_nearest_mipmap_linear:
+            sampler_info.minFilter  = VK_FILTER_NEAREST;
+            sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            break;
+
+        default:
+            sampler_info.minFilter  = VK_FILTER_LINEAR;
+            sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            break;
+        }
+
+        switch (cgltf_sampler->wrap_s) {
+        case cgltf_wrap_mode_clamp_to_edge:
+            sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            break;
+        case cgltf_wrap_mode_mirrored_repeat:
+            sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            break;
+        default:
+            sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            break;
+        }
+
+        switch (cgltf_sampler->wrap_t) {
+        case cgltf_wrap_mode_clamp_to_edge:
+            sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            break;
+
+        case cgltf_wrap_mode_mirrored_repeat:
+            sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            break;
+        default:
+            sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            break;
+        }
+
+        sampler_info.addressModeW            = sampler_info.addressModeV; // Usually the same as V
+        sampler_info.anisotropyEnable        = VK_TRUE;
+        sampler_info.maxAnisotropy           = 16.0f;
+        sampler_info.borderColor             = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+        sampler_info.unnormalizedCoordinates = VK_FALSE;
+        sampler_info.compareEnable           = VK_FALSE;
+        sampler_info.compareOp               = VK_COMPARE_OP_NEVER;
+        sampler_info.mipLodBias              = 0.0f;
+        sampler_info.minLod                  = 0.0f;
+        sampler_info.maxLod                  = VK_LOD_CLAMP_NONE;
+
+        VkSampler sampler;
+        VK_CHECK(vkCreateSampler(device, &sampler_info, nullptr, &sampler));
+
+        samplers.push_back(sampler);
+    }
+
+    return samplers;
 }
 
 void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
@@ -372,8 +466,8 @@ void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator al
         abort_message(message);
     }
 
-    std::vector<AllocatedImage> gltf_images;
-    load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index, &gltf_images);
+    std::vector<AllocatedImage> gltf_images   = load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index);
+    std::vector<VkSampler>      gltf_samplers = load_gltf_samplers(gltf_data, device);
 
     cgltf_free(gltf_data);
 }

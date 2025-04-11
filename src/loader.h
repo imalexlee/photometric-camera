@@ -11,12 +11,6 @@ struct Vertex {
     float tex_coord[2][2]{};
 };
 
-// holds allocated, compressed images from the loaded gltf
-// struct GltfImages {
-//     VkImage image{};
-//     VkImage image_view{};
-// };
-
 struct TextureInfo {
     uint32_t index{};
     uint32_t tex_coord{};

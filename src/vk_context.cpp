@@ -77,7 +77,8 @@ VkDevice create_logical_device(VkPhysicalDevice physical_device, uint32_t queue_
 
     vkGetPhysicalDeviceFeatures2(physical_device, &physical_device_features_2);
 
-    if (vk_1_3_features.dynamicRendering == VK_FALSE || vk_1_3_features.synchronization2 == VK_FALSE) {
+    if (vk_1_3_features.dynamicRendering == VK_FALSE || vk_1_3_features.synchronization2 == VK_FALSE ||
+        physical_device_features_2.features.samplerAnisotropy == VK_FALSE) {
         abort_message("Required features are not supported by this device");
     }
 
@@ -85,8 +86,9 @@ VkDevice create_logical_device(VkPhysicalDevice physical_device, uint32_t queue_
     vk_1_3_features.dynamicRendering = VK_TRUE;
     vk_1_3_features.synchronization2 = VK_TRUE;
 
-    physical_device_features_2       = VkPhysicalDeviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
-    physical_device_features_2.pNext = &vk_1_3_features;
+    physical_device_features_2                            = VkPhysicalDeviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
+    physical_device_features_2.features.samplerAnisotropy = VK_TRUE;
+    physical_device_features_2.pNext                      = &vk_1_3_features;
 
     VkDeviceCreateInfo device_ci = vk_lib::device_create_info(queue_create_infos, device_extensions, nullptr, &physical_device_features_2);
     VkDevice           device;
