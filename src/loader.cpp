@@ -4,8 +4,10 @@
 
 #define KHRONOS_STATIC
 
+
 #include <ktx.h>
 #include <ktxvulkan.h>
+#include <thread>
 
 static std::string cgltf_result_to_string(cgltf_result result) {
     switch (result) {
@@ -39,7 +41,7 @@ static std::string cgltf_result_to_string(cgltf_result result) {
 void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, uint32_t color_channels, VkFormat* uncompressed_vk_format,
                           VkFormat* ideal_compressed_vk_format, ktx_transcode_fmt_e* ktx_transcode_format) {
     const cgltf_image* target_image = &cgltf_data->images[image_index];
-    bool               is_srgb      = true; // default to sRGB, we'll set to false for data textures
+    bool is_srgb                    = true; // default to sRGB, we'll set to false for data textures
 
     for (uint32_t i = 0; i < cgltf_data->materials_count; i++) {
         const cgltf_material* material = &cgltf_data->materials[i];
@@ -93,12 +95,12 @@ void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, ui
 
     switch (color_channels) {
     case 1:
-        *uncompressed_vk_format     = VK_FORMAT_R8_UNORM;
+        *uncompressed_vk_format = VK_FORMAT_R8_UNORM;
         *ideal_compressed_vk_format = VK_FORMAT_BC4_UNORM_BLOCK;
         *ktx_transcode_format       = KTX_TTF_BC4_R;
         break;
     case 2:
-        *uncompressed_vk_format     = VK_FORMAT_R8G8_UNORM;
+        *uncompressed_vk_format = VK_FORMAT_R8G8_UNORM;
         *ideal_compressed_vk_format = VK_FORMAT_BC5_UNORM_BLOCK;
         *ktx_transcode_format       = KTX_TTF_BC5_RG;
         break;
@@ -134,39 +136,55 @@ void load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_d
     // if it doesn't contain the hash, write the ktx file to the cache
     // take the ktx file, transcode it to appropriate compression
     // upload to vulkan and create a VkImage and VkImageView from it
-    bool check_cache      = false;
-    bool cache_dir_exists = false;
+    bool check_cache    = false;
+    bool write_to_cache = false;
     if (!load_options->cache_dir.empty()) {
         if (std::filesystem::exists(load_options->cache_dir)) {
             // cache already exists, so check for ktx images there for the duration of this function
-            cache_dir_exists = true;
-            check_cache      = true;
+            check_cache    = true;
+            write_to_cache = true;
         } else {
             // check_cache will remain false since this new cache will not have any cached images within it obviously
-            cache_dir_exists = std::filesystem::create_directory(load_options->cache_dir);
+            write_to_cache = std::filesystem::create_directory(load_options->cache_dir);
         }
     }
+
+    // initialize vulkan stuff for libktx
+    // ktxVulkanDeviceInfo ktx_vk_device_info;
+    // ktxVulkanDeviceInfo_Construct(&ktx_vk_device_info, physical_device, device, queue, command_pool, nullptr);
+
     images->clear();
     images->reserve(cgltf_data->images_count);
     for (uint32_t i = 0; i < cgltf_data->images_count; i++) {
-        // 1. get a ktx file for this image
+        //1 . pull format from images
+        int width, height, component_count;
+        const cgltf_buffer_view* buffer_view = cgltf_data->images[i].buffer_view;
+        stbi_info_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset,
+                              static_cast<int>(buffer_view->size), &width, &height, &component_count);
+
+        ktx_transcode_fmt_e ktx_transcode_format{};
+        VkFormat uncompressed_format{};
+        VkFormat compressed_format{}; // may not need this
+        get_format_for_image(cgltf_data, i, component_count, &uncompressed_format, &compressed_format, &ktx_transcode_format);
+
+        // 2. get a ktx file for this image
         // create variable for ktx texture and for cache_img_exists = false;
         // if check cache enabled, look for a ktx file there and set ktx texture to that if it exists.
         // if no ktx texture, then create a ktx file by loading with stb, then using lib ktx to write the ktx file
-        // if cache_dir exists cache_img_exists == false, write the newly created ktx to the cache for next time
-        ktxVulkanDeviceInfo ktx_vk_device_info;
-        ktxVulkanDeviceInfo_Construct(&ktx_vk_device_info, physical_device, device, queue, command_pool, nullptr);
+        // if use_cache_dir == true and cache_img_exists == false, write the newly created ktx to the cache for next time
 
-        ktxTexture2*          ktx_texture = nullptr;
-        KTX_error_code        result;
-        bool                  cache_img_exists = false;
-        std::filesystem::path image_hash       = load_options->gltf_path.stem();
+        ktxTexture2* ktx_texture = nullptr;
+        KTX_error_code result;
+
+        std::string image_hash = load_options->gltf_path.stem().string() + "_" + std::to_string(i) + "_" + ".ktx2";
+        std::string cache_path =
+            load_options->cache_dir.string() + image_hash;
+
+        bool cache_img_exists = false;
         if (check_cache) {
-            std::filesystem::path possible_cache_path =
-                load_options->cache_dir.string() + image_hash.string() + "_" + std::to_string(i) + "_" + ".ktx2";
-            if (std::filesystem::exists(possible_cache_path)) {
+            if (std::filesystem::exists(cache_path)) {
                 cache_img_exists = true;
-                result = ktxTexture2_CreateFromNamedFile(possible_cache_path.string().c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
+                result           = ktxTexture2_CreateFromNamedFile(cache_path.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
                 if (result != KTX_SUCCESS) {
                     const std::string message = "Cannot load file with error code: " + result;
                     abort_message(message);
@@ -174,34 +192,75 @@ void load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_d
             }
         }
 
-        ktx_transcode_fmt_e ktx_transcode_format{};
-        VkFormat            uncompressed_format{};
-        VkFormat            compressed_format{}; // may not need this
-        // maybe just call stbi_info_from_memory on the image file regardless of cache to detect format
-
         if (!cache_img_exists) {
-            int                      width, height, component_count;
-            const cgltf_buffer_view* buffer_view = cgltf_data->images[i].buffer_view;
 
             unsigned char* img_data = stbi_load_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset,
                                                             static_cast<int>(buffer_view->size), &width, &height, &component_count, 0);
-
             if (img_data == nullptr) {
                 abort_message(stbi_failure_reason());
             }
 
             ktxTextureCreateInfo create_info{};
-            // create_info.vkFormat = VK_FORMAT_;
-            result = ktxTexture2_Create(&create_info, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &ktx_texture);
+            create_info.vkFormat        = uncompressed_format;
+            create_info.baseDepth       = 1;
+            create_info.baseWidth       = width;
+            create_info.baseHeight      = height;
+            create_info.numDimensions   = 2;
+            create_info.numFaces        = 1;
+            create_info.numLayers       = 1;
+            create_info.numLevels       = 1;
+            create_info.isArray         = false;
+            create_info.generateMipmaps = false;
+            result                      = ktxTexture2_Create(&create_info, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &ktx_texture);
+            if (result != KTX_SUCCESS) {
+                const std::string message = "Cannot create ktx texture with error code: " + result;
+                abort_message(message);
+            }
 
-            stbi_image_free(img_data);
+            uint64_t img_data_size = component_count * width * height;
+
+            result = ktxTexture_SetImageFromMemory(ktxTexture(ktx_texture), 0, 0, 0, img_data, img_data_size);
+            stbi_image_free(img_data); // todo: see if it is actually safe to free the image here
+
+            if (result != KTX_SUCCESS) {
+                const std::string message = "Cannot set ktx image from memory with error code: " + result;
+                abort_message(message);
+            }
+
+            ktxBasisParams params{};
+            params.structSize  = sizeof(params);
+            params.uastc       = KTX_TRUE;
+            params.threadCount = std::max(std::thread::hardware_concurrency(), 1u);
+
+            result = ktxTexture2_CompressBasisEx(ktx_texture, &params);
+            if (result != KTX_SUCCESS) {
+                const std::string message = "Cannot compress with error code: " + result;
+                abort_message(message);
+            }
+            if (write_to_cache) {
+                result = ktxTexture2_WriteToNamedFile(ktx_texture, cache_path.c_str());
+                if (result != KTX_SUCCESS) {
+                    const std::string message = "Cannot write ktx data to file with error code: " + result;
+                    abort_message(message);
+                }
+            }
         }
+        // now I have a filled ktx texture. transcode it appropriately
+        result = ktxTexture2_TranscodeBasis(ktx_texture, ktx_transcode_format, 0);
+        if (result != KTX_SUCCESS) {
+            const std::string message = "Cannot transcode with error code: " + result;
+            abort_message(message);
+        }
+
+        // todo: create vulkan images and image_views
+
+        ktxTexture2_Destroy(ktx_texture);
     }
 }
 
 void load_gltf(const LoadOptions* load_options, VkPhysicalDevice physical_device, VkDevice device, VkQueue queue, VkCommandPool command_pool) {
     cgltf_options options{};
-    cgltf_data*   gltf_data = nullptr;
+    cgltf_data* gltf_data = nullptr;
 
     cgltf_result result = cgltf_parse_file(&options, load_options->gltf_path.string().c_str(), &gltf_data);
     if (result != cgltf_result_success) {
