@@ -37,3 +37,11 @@
     std::cerr << message << std::endl;
     std::abort();
 }
+
+struct AllocatedImage {
+    VkImage           image{};
+    VkImageView       image_view{};
+    VkExtent3D        extent{};
+    VmaAllocation     allocation{};
+    VmaAllocationInfo allocation_info{};
+};

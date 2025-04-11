@@ -16,9 +16,6 @@ static VkShaderModule load_shader(VkDevice device, const std::filesystem::path& 
 }
 static GraphicsPipeline create_graphics_pipeline(VkDevice device, VkFormat color_attachment_format, uint32_t width, uint32_t height) {
 
-    const VkViewport viewport = vk_lib::viewport(static_cast<float>(width), static_cast<float>(height));
-    const VkRect2D   scissor  = vk_lib::rect_2d(width, height);
-
     VkPipelineLayoutCreateInfo layout_create_info = vk_lib::pipeline_layout_create_info();
     VkPipelineLayout           pipeline_layout;
     vkCreatePipelineLayout(device, &layout_create_info, nullptr, &pipeline_layout);
@@ -192,7 +189,7 @@ void renderer_draw(Renderer* renderer) {
     VK_CHECK(vkBeginCommandBuffer(command_buffer, &begin_info));
 
     const VkViewport viewport = vk_lib::viewport(static_cast<float>(swapchain_ctx->extent.width), static_cast<float>(swapchain_ctx->extent.height));
-    const VkRect2D   scissor  = vk_lib::rect_2d(swapchain_ctx->extent.width, swapchain_ctx->extent.height);
+    const VkRect2D   scissor  = vk_lib::rect_2d(swapchain_ctx->extent);
 
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
@@ -224,7 +221,7 @@ void renderer_draw(Renderer* renderer) {
         VK_ATTACHMENT_STORE_OP_DONT_CARE, &clear_value, VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     std::array               color_attachment_infos = {color_attachment_info};
-    const VkRect2D           render_area            = vk_lib::rect_2d(swapchain_ctx->extent.width, swapchain_ctx->extent.height);
+    const VkRect2D           render_area            = vk_lib::rect_2d(swapchain_ctx->extent);
     const VkRenderingInfoKHR rendering_info         = vk_lib::rendering_info(render_area, color_attachment_infos);
 
     vkCmdBeginRenderingKHR(command_buffer, &rendering_info);

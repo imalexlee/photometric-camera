@@ -12,14 +12,6 @@ struct GraphicsPipeline {
     VkShaderModule   frag_shader{};
 };
 
-struct AllocatedImage {
-    VkImage           image{};
-    VkImageView       image_view{};
-    VkExtent3D        extent{};
-    VmaAllocation     allocation{};
-    VmaAllocationInfo allocation_info{};
-};
-
 struct Renderer {
     VkContext          vk_context{};
     SwapchainContext   swapchain_context{};

@@ -12,10 +12,10 @@ struct Vertex {
 };
 
 // holds allocated, compressed images from the loaded gltf
-struct GltfImages {
-    VkImage image{};
-    VkImage image_view{};
-};
+// struct GltfImages {
+//     VkImage image{};
+//     VkImage image_view{};
+// };
 
 struct TextureInfo {
     uint32_t index{};
@@ -47,5 +47,5 @@ struct LoadOptions {
     std::filesystem::path cache_dir{};
 };
 
-void load_gltf(const LoadOptions* load_options, VkPhysicalDevice physical_device = nullptr, VkDevice device = nullptr, VkQueue queue = nullptr,
-               VkCommandPool command_pool = nullptr);
+void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
+               uint32_t queue_family_index);
