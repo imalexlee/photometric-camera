@@ -4,9 +4,40 @@
 
 #define KHRONOS_STATIC
 
+#include <functional>
 #include <ktx.h>
 #include <renderer.h>
 #include <thread>
+
+void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
+                                 std::function<void(VkCommandBuffer command_buffer)>&& function) {
+
+    VkFence                 fence{};
+    const VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
+    VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &fence));
+
+    const VkCommandBufferAllocateInfo command_buffer_ai = vk_lib::command_buffer_allocate_info(command_pool);
+    VkCommandBuffer                   cmd_buf;
+    VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &cmd_buf));
+
+    const VkCommandBufferBeginInfo command_buffer_bi = vk_lib::command_buffer_begin_info();
+    VK_CHECK(vkBeginCommandBuffer(cmd_buf, &command_buffer_bi));
+
+    function(cmd_buf);
+
+    VK_CHECK(vkEndCommandBuffer(cmd_buf));
+
+    const VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(cmd_buf);
+    const VkSubmitInfo2             submit_info_2              = vk_lib::submit_info_2(&command_buffer_submit_info);
+
+    VK_CHECK(vkQueueSubmit2(queue, 1, &submit_info_2, fence));
+
+    VK_CHECK(vkWaitForFences(device, 1, &fence, true, UINT64_MAX));
+
+    vkFreeCommandBuffers(device, command_pool, 1, &cmd_buf);
+
+    vkDestroyFence(device, fence, nullptr);
+}
 
 static std::string cgltf_result_to_string(cgltf_result result) {
     switch (result) {
@@ -127,9 +158,19 @@ static void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_in
     }
 }
 
+static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, AllocatedBuffer* staging_buffer) {
+    const VkBufferCreateInfo staging_buffer_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, data_size, 0);
+    VmaAllocationCreateInfo  allocation_ci{};
+    allocation_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    VK_CHECK(vmaCreateBuffer(allocator, &staging_buffer_ci, &allocation_ci, &staging_buffer->buffer, &staging_buffer->allocation,
+                             &staging_buffer->allocation_info));
+}
+
 // load gltf images, compress them, then create vulkan images and images views from them
 static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device,
-                                                    VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index) {
+                                                    VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index,
+                                                    AllocatedBuffer* staging_buffer) {
     bool check_cache    = false;
     bool write_to_cache = false;
     if (!load_options->cache_dir.empty()) {
@@ -141,16 +182,6 @@ static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_opti
             write_to_cache = std::filesystem::create_directory(load_options->cache_dir);
         }
     }
-
-    // create staging buffer for vulkan image uploads
-    VkBuffer          staging_buffer{};
-    VmaAllocation     staging_allocation{};
-    VmaAllocationInfo staging_allocation_info{};
-
-    // will use this to wait for buffer -> image copy commands to finish
-    VkFence           transfer_fence{};
-    VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
-    VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &transfer_fence));
 
     std::vector<AllocatedImage> gltf_images;
     gltf_images.reserve(cgltf_data->images_count);
@@ -270,18 +301,14 @@ static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_opti
         vkCreateImageView(device, &image_view_ci, nullptr, &new_texture.image_view);
 
         // 6. allocate additional memory in the staging buffer allocation if needed for this texture
-        if (staging_allocation_info.size < ktx_texture->dataSize) {
-            if (staging_allocation_info.size > 0) {
-                vmaDestroyBuffer(allocator, staging_buffer, staging_allocation);
+        if (staging_buffer->allocation_info.size < ktx_texture->dataSize) {
+            if (staging_buffer->allocation_info.size > 0) {
+                vmaDestroyBuffer(allocator, staging_buffer->buffer, staging_buffer->allocation);
             }
-            VkBufferCreateInfo      staging_buffer_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, ktx_texture->dataSize, 0);
-            VmaAllocationCreateInfo allocation_ci{};
-            allocation_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-            allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-            VK_CHECK(vmaCreateBuffer(allocator, &staging_buffer_ci, &allocation_ci, &staging_buffer, &staging_allocation, &staging_allocation_info));
+            allocate_staging_buffer(allocator, ktx_texture->dataSize, staging_buffer);
         }
         // 7. fill staging buffer with all image levels
-        memcpy(staging_allocation_info.pMappedData, ktx_texture->pData, ktx_texture->dataSize);
+        memcpy(staging_buffer->allocation_info.pMappedData, ktx_texture->pData, ktx_texture->dataSize);
 
         // 8. create copy info for each mip level for our staging_buffer -> image copy
         std::vector<VkBufferImageCopy> buffer_image_copies;
@@ -303,52 +330,29 @@ static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_opti
 
         // 9. run copy commands to upload the staging data to image memory
 
-        VkCommandBufferAllocateInfo command_buffer_ai = vk_lib::command_buffer_allocate_info(command_pool);
-        VkCommandBuffer             cmd_buf;
-        VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &cmd_buf));
+        vk_command_immediate_submit(device, command_pool, queue, [&](VkCommandBuffer cmd_buf) {
+            const VkImageMemoryBarrier2 copy_memory_barrier =
+                vk_lib::image_memory_barrier_2(new_texture.image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                               queue_family_index, queue_family_index);
 
-        VkCommandBufferBeginInfo command_buffer_bi = vk_lib::command_buffer_begin_info();
-        VK_CHECK(vkBeginCommandBuffer(cmd_buf, &command_buffer_bi));
+            const VkDependencyInfo copy_dependency_info = vk_lib::dependency_info(&copy_memory_barrier, {}, {});
+            vkCmdPipelineBarrier2(cmd_buf, &copy_dependency_info);
 
-        const VkImageMemoryBarrier2 copy_memory_barrier =
-            vk_lib::image_memory_barrier_2(new_texture.image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                           queue_family_index, queue_family_index);
+            vkCmdCopyBufferToImage(cmd_buf, staging_buffer->buffer, new_texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   buffer_image_copies.size(), buffer_image_copies.data());
 
-        const VkDependencyInfo copy_dependency_info = vk_lib::dependency_info(&copy_memory_barrier, {}, {});
-        vkCmdPipelineBarrier2(cmd_buf, &copy_dependency_info);
+            const VkImageMemoryBarrier2 texture_use_memory_barrier =
+                vk_lib::image_memory_barrier_2(new_texture.image, subresource_range, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queue_family_index, queue_family_index);
 
-        vkCmdCopyBufferToImage(cmd_buf, staging_buffer, new_texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, buffer_image_copies.size(),
-                               buffer_image_copies.data());
-
-        const VkImageMemoryBarrier2 texture_use_memory_barrier =
-            vk_lib::image_memory_barrier_2(new_texture.image, subresource_range, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queue_family_index, queue_family_index);
-
-        const VkDependencyInfo texture_use_dependency_info = vk_lib::dependency_info(&texture_use_memory_barrier, {}, {});
-        vkCmdPipelineBarrier2(cmd_buf, &texture_use_dependency_info);
-
-        VK_CHECK(vkEndCommandBuffer(cmd_buf));
-
-        VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(cmd_buf);
-        VkSubmitInfo2             submit_info_2              = vk_lib::submit_info_2(&command_buffer_submit_info);
-
-        VK_CHECK(vkQueueSubmit2(queue, 1, &submit_info_2, transfer_fence));
-
-        VK_CHECK(vkWaitForFences(device, 1, &transfer_fence, true, UINT64_MAX));
-        VK_CHECK(vkResetFences(device, 1, &transfer_fence));
-
-        vkFreeCommandBuffers(device, command_pool, 1, &cmd_buf);
+            const VkDependencyInfo texture_use_dependency_info = vk_lib::dependency_info(&texture_use_memory_barrier, {}, {});
+            vkCmdPipelineBarrier2(cmd_buf, &texture_use_dependency_info);
+        });
 
         ktxTexture2_Destroy(ktx_texture);
 
         gltf_images.push_back(new_texture);
     }
-
-    // 10. cleanup
-    if (staging_allocation_info.size > 0) {
-        vmaDestroyBuffer(allocator, staging_buffer, staging_allocation);
-    }
-    vkDestroyFence(device, transfer_fence, nullptr);
 
     return gltf_images;
 }
@@ -444,7 +448,8 @@ static std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, V
 }
 
 // create meshes along with primitives. allocate vertex and index buffers on gpu
-static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data) {
+static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data, VkDevice device, VkQueue queue, VkCommandPool command_pool,
+                                              VmaAllocator allocator, AllocatedBuffer* staging_buffer) {
     std::vector<GltfMesh> meshes;
     meshes.reserve(cgltf_data->meshes_count);
 
@@ -464,7 +469,31 @@ static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data) {
             if (gltf_primitive->type != cgltf_primitive_type_invalid) {
                 primitive.mode = static_cast<PrimitiveMode>(gltf_primitive->type - 1);
             }
-            // todo: write to staging buffers and upload to vulkan using accessors
+            // load indices if present
+            if (gltf_primitive->indices) {
+                const cgltf_accessor* indices_accessor = gltf_primitive->indices;
+                if (gltf_primitive->indices->component_type == cgltf_component_type_r_32u) {
+                    primitive.index_type = VK_INDEX_TYPE_UINT32;
+                }
+                // up the size of the staging buffer if needed
+                if (staging_buffer->allocation_info.size < indices_accessor->buffer_view->size) {
+                    if (staging_buffer->allocation_info.size > 0) {
+                        vmaDestroyBuffer(allocator, staging_buffer->buffer, staging_buffer->allocation);
+                    }
+                    allocate_staging_buffer(allocator, indices_accessor->buffer_view->size, staging_buffer);
+                }
+                memcpy(staging_buffer->allocation_info.pMappedData,
+                       static_cast<uint8_t*>(indices_accessor->buffer_view->buffer->data) + indices_accessor->buffer_view->offset,
+                       indices_accessor->buffer_view->size);
+
+                VkBufferCopy buffer_copy = vk_lib::buffer_copy(indices_accessor->buffer_view->size);
+
+                vk_command_immediate_submit(device, command_pool, queue, [&](VkCommandBuffer cmd_buf) {
+                    vkCmdCopyBuffer(cmd_buf, staging_buffer->buffer, primitive.index_buffer, 1, &buffer_copy);
+                });
+            }
+
+            // todo: load attributes
         }
     }
 
@@ -494,9 +523,16 @@ void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator al
         abort_message(message);
     }
 
-    std::vector<AllocatedImage> gltf_images   = load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index);
-    std::vector<VkSampler>      gltf_samplers = load_gltf_samplers(gltf_data, device);
-    // load an array of meshes
+    AllocatedBuffer staging_buffer{};
 
+    std::vector<AllocatedImage> gltf_images =
+        load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index, &staging_buffer);
+    // std::vector<VkSampler> gltf_samplers = load_gltf_samplers(gltf_data, device);
+    // load an array of meshes
+    // load_gltf_meshes(gltf_data, device, queue, command_pool, allocator, &staging_buffer);
+
+    if (staging_buffer.allocation_info.size > 0) {
+        vmaDestroyBuffer(allocator, staging_buffer.buffer, staging_buffer.allocation);
+    }
     cgltf_free(gltf_data);
 }

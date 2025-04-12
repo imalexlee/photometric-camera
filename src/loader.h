@@ -30,6 +30,7 @@ enum class PrimitiveMode {
 
 struct GltfPrimitive {
     VkBuffer      index_buffer{};
+    VkIndexType   index_type{VK_INDEX_TYPE_UINT16};
     VkBuffer      vertices{};
     int32_t       material{};
     PrimitiveMode mode{PrimitiveMode::triangles};

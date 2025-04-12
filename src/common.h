@@ -45,3 +45,10 @@ struct AllocatedImage {
     VmaAllocation     allocation{};
     VmaAllocationInfo allocation_info{};
 };
+
+struct AllocatedBuffer {
+    VkBuffer          buffer{};
+    VkBufferView      buffer_view{};
+    VmaAllocation     allocation{};
+    VmaAllocationInfo allocation_info{};
+};
