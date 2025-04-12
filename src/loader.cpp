@@ -37,8 +37,8 @@ static std::string cgltf_result_to_string(cgltf_result result) {
     }
 }
 
-void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, uint32_t color_channels, VkFormat* uncompressed_vk_format,
-                          VkFormat* ideal_compressed_vk_format, ktx_transcode_fmt_e* ktx_transcode_format) {
+static void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, uint32_t color_channels, VkFormat* uncompressed_vk_format,
+                                 VkFormat* ideal_compressed_vk_format, ktx_transcode_fmt_e* ktx_transcode_format) {
     const cgltf_image* target_image = &cgltf_data->images[image_index];
     bool               is_srgb      = true; // default to sRGB, we'll set to false for data textures
 
@@ -128,8 +128,8 @@ void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, ui
 }
 
 // load gltf images, compress them, then create vulkan images and images views from them
-std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device, VmaAllocator allocator,
-                                             VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index) {
+static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device,
+                                                    VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index) {
     bool check_cache    = false;
     bool write_to_cache = false;
     if (!load_options->cache_dir.empty()) {
@@ -353,7 +353,7 @@ std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, co
     return gltf_images;
 }
 
-std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, VkDevice device) {
+static std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, VkDevice device) {
     std::vector<VkSampler> samplers;
     samplers.reserve(cgltf_data->samplers_count);
 
@@ -443,6 +443,34 @@ std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, VkDevice
     return samplers;
 }
 
+// create meshes along with primitives. allocate vertex and index buffers on gpu
+static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data) {
+    std::vector<GltfMesh> meshes;
+    meshes.reserve(cgltf_data->meshes_count);
+
+    for (uint32_t i = 0; i < cgltf_data->meshes_count; i++) {
+        const cgltf_mesh*          gltf_mesh = &cgltf_data->meshes[i];
+        std::vector<GltfPrimitive> primitives;
+        primitives.reserve(gltf_mesh->primitives_count);
+        for (uint32_t j = 0; j < gltf_mesh->primitives_count; j++) {
+            const cgltf_primitive* gltf_primitive = &gltf_mesh->primitives[j];
+
+            GltfPrimitive primitive{};
+            primitive.material = -1; // default is no material
+            if (gltf_primitive->material) {
+                primitive.material = static_cast<int32_t>(gltf_primitive->material - cgltf_data->materials);
+            }
+
+            if (gltf_primitive->type != cgltf_primitive_type_invalid) {
+                primitive.mode = static_cast<PrimitiveMode>(gltf_primitive->type - 1);
+            }
+            // todo: write to staging buffers and upload to vulkan using accessors
+        }
+    }
+
+    return meshes;
+}
+
 void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
                uint32_t queue_family_index) {
     cgltf_options options{};
@@ -468,6 +496,7 @@ void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator al
 
     std::vector<AllocatedImage> gltf_images   = load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index);
     std::vector<VkSampler>      gltf_samplers = load_gltf_samplers(gltf_data, device);
+    // load an array of meshes
 
     cgltf_free(gltf_data);
 }

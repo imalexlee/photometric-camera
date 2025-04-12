@@ -18,10 +18,21 @@ struct TextureInfo {
 
 struct GltfMaterial {};
 
+enum class PrimitiveMode {
+    points,
+    lines,
+    line_loop,
+    line_strip,
+    triangles,
+    triangle_strip,
+    triangle_fan,
+};
+
 struct GltfPrimitive {
-    VkBuffer index_buffer{};
-    VkBuffer vertices{};
-    uint32_t material{};
+    VkBuffer      index_buffer{};
+    VkBuffer      vertices{};
+    int32_t       material{};
+    PrimitiveMode mode{PrimitiveMode::triangles};
 };
 
 struct GltfMesh {
@@ -32,7 +43,7 @@ struct GltfMesh {
 struct GltfNode {
     float                 local_transform[16]{};
     float                 world_transform[16]{};
-    GltfMesh              mesh;
+    uint32_t              mesh;
     std::vector<uint32_t> children{};
 };
 
