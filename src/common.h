@@ -48,6 +48,7 @@ struct AllocatedImage {
 
 struct AllocatedBuffer {
     VkBuffer          buffer{};
+    VkDeviceAddress   address{};
     VkBufferView      buffer_view{};
     VmaAllocation     allocation{};
     VmaAllocationInfo allocation_info{};

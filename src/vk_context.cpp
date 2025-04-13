@@ -70,25 +70,17 @@ VkDevice create_logical_device(VkPhysicalDevice physical_device, uint32_t queue_
     std::array device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
                                     VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME};
 
-    VkPhysicalDeviceVulkan13Features vk_1_3_features{};
-    vk_1_3_features.sType                                = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    VkPhysicalDeviceFeatures2 physical_device_features_2 = VkPhysicalDeviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
-    physical_device_features_2.pNext                     = &vk_1_3_features;
+    VkPhysicalDeviceVulkan13Features vk_1_3_features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    vk_1_3_features.dynamicRendering                 = VK_TRUE;
+    vk_1_3_features.synchronization2                 = VK_TRUE;
 
-    vkGetPhysicalDeviceFeatures2(physical_device, &physical_device_features_2);
+    VkPhysicalDeviceVulkan12Features vk_1_2_features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    vk_1_2_features.bufferDeviceAddress              = VK_TRUE;
+    vk_1_2_features.pNext                            = &vk_1_3_features;
 
-    if (vk_1_3_features.dynamicRendering == VK_FALSE || vk_1_3_features.synchronization2 == VK_FALSE ||
-        physical_device_features_2.features.samplerAnisotropy == VK_FALSE) {
-        abort_message("Required features are not supported by this device");
-    }
-
-    vk_1_3_features                  = VkPhysicalDeviceVulkan13Features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-    vk_1_3_features.dynamicRendering = VK_TRUE;
-    vk_1_3_features.synchronization2 = VK_TRUE;
-
-    physical_device_features_2                            = VkPhysicalDeviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
+    VkPhysicalDeviceFeatures2 physical_device_features_2  = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
     physical_device_features_2.features.samplerAnisotropy = VK_TRUE;
-    physical_device_features_2.pNext                      = &vk_1_3_features;
+    physical_device_features_2.pNext                      = &vk_1_2_features;
 
     VkDeviceCreateInfo device_ci = vk_lib::device_create_info(queue_create_infos, device_extensions, nullptr, &physical_device_features_2);
     VkDevice           device;

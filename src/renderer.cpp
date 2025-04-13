@@ -86,15 +86,16 @@ static VmaAllocator allocator_create(const VkContext* vk_context) {
     vma_vulkan_functions.vkGetDeviceBufferMemoryRequirements     = vkGetDeviceBufferMemoryRequirements;
     vma_vulkan_functions.vkGetDeviceImageMemoryRequirements      = vkGetDeviceImageMemoryRequirements;
 
-    VmaAllocatorCreateInfo allocatorCreateInfo = {};
-    allocatorCreateInfo.vulkanApiVersion       = VK_API_VERSION_1_3;
-    allocatorCreateInfo.physicalDevice         = vk_context->physical_device;
-    allocatorCreateInfo.device                 = vk_context->device;
-    allocatorCreateInfo.instance               = vk_context->instance;
-    allocatorCreateInfo.pVulkanFunctions       = &vma_vulkan_functions;
+    VmaAllocatorCreateInfo allocator_create_info = {};
+    allocator_create_info.vulkanApiVersion       = VK_API_VERSION_1_3;
+    allocator_create_info.physicalDevice         = vk_context->physical_device;
+    allocator_create_info.device                 = vk_context->device;
+    allocator_create_info.instance               = vk_context->instance;
+    allocator_create_info.pVulkanFunctions       = &vma_vulkan_functions;
+    allocator_create_info.flags                  = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
     VmaAllocator allocator;
-    VK_CHECK(vmaCreateAllocator(&allocatorCreateInfo, &allocator));
+    VK_CHECK(vmaCreateAllocator(&allocator_create_info, &allocator));
 
     return allocator;
 }
