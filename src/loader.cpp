@@ -171,9 +171,9 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 }
 
 // load gltf images, compress them, then create vulkan images and images views from them
-static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device,
-                                                    VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue, uint32_t queue_family_index,
-                                                    AllocatedBuffer* staging_buffer) {
+[[nodiscard]] static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_options, const cgltf_data* cgltf_data, VkDevice device,
+                                                                  VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
+                                                                  uint32_t queue_family_index, AllocatedBuffer* staging_buffer) {
     bool check_cache    = false;
     bool write_to_cache = false;
     if (!load_options->cache_dir.empty()) {
@@ -359,7 +359,7 @@ static std::vector<AllocatedImage> load_gltf_images(const LoadOptions* load_opti
     return gltf_images;
 }
 
-static std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, VkDevice device) {
+[[nodiscard]] static std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, VkDevice device) {
     std::vector<VkSampler> samplers;
     samplers.reserve(cgltf_data->samplers_count);
 
@@ -450,22 +450,23 @@ static std::vector<VkSampler> load_gltf_samplers(const cgltf_data* cgltf_data, V
 }
 
 // create meshes along with primitives. allocate vertex and index buffers on gpu
-static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data, VkDevice device, VkQueue queue, uint32_t queue_family_index,
-                                              VkCommandPool command_pool, VmaAllocator allocator, AllocatedBuffer* staging_buffer) {
+[[nodiscard]] static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data, VkDevice device, VkQueue queue, uint32_t queue_family_index,
+                                                            VkCommandPool command_pool, VmaAllocator allocator, AllocatedBuffer* staging_buffer) {
     std::vector<GltfMesh> meshes;
     meshes.reserve(cgltf_data->meshes_count);
 
     for (uint32_t i = 0; i < cgltf_data->meshes_count; i++) {
-        const cgltf_mesh*          gltf_mesh = &cgltf_data->meshes[i];
-        std::vector<GltfPrimitive> primitives;
-        primitives.reserve(gltf_mesh->primitives_count);
+        const cgltf_mesh* gltf_mesh = &cgltf_data->meshes[i];
+
+        GltfMesh mesh;
+
+        mesh.primitives.reserve(gltf_mesh->primitives_count);
         for (uint32_t j = 0; j < gltf_mesh->primitives_count; j++) {
             const cgltf_primitive* gltf_primitive = &gltf_mesh->primitives[j];
 
             GltfPrimitive primitive{};
-            primitive.material = -1; // default is no material
             if (gltf_primitive->material) {
-                primitive.material = static_cast<int32_t>(gltf_primitive->material - cgltf_data->materials);
+                primitive.material = gltf_primitive->material - cgltf_data->materials;
             }
 
             if (gltf_primitive->type != cgltf_primitive_type_invalid) {
@@ -493,11 +494,12 @@ static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data, VkDe
                 VmaAllocationCreateInfo allocation_ci{};
                 allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-                VK_CHECK(vmaCreateBuffer(allocator, &indices_buffer_ci, &allocation_ci, &primitive.index_buffer.buffer,
-                                         &primitive.index_buffer.allocation, &primitive.index_buffer.allocation_info));
+                primitive.index_buffer = AllocatedBuffer{};
+                VK_CHECK(vmaCreateBuffer(allocator, &indices_buffer_ci, &allocation_ci, &primitive.index_buffer->buffer,
+                                         &primitive.index_buffer->allocation, &primitive.index_buffer->allocation_info));
 
                 vk_command_immediate_submit(device, command_pool, queue, [&](VkCommandBuffer cmd_buf) {
-                    vkCmdCopyBuffer(cmd_buf, staging_buffer->buffer, primitive.index_buffer.buffer, 1, &buffer_copy);
+                    vkCmdCopyBuffer(cmd_buf, staging_buffer->buffer, primitive.index_buffer->buffer, 1, &buffer_copy);
                 });
             }
 
@@ -589,10 +591,85 @@ static std::vector<GltfMesh> load_gltf_meshes(const cgltf_data* cgltf_data, VkDe
 
             VkBufferDeviceAddressInfo device_address_info = vk_lib::buffer_device_address_info(primitive.vertex_buffer.buffer);
             primitive.vertex_buffer.address               = vkGetBufferDeviceAddress(device, &device_address_info);
+
+            mesh.primitives.push_back(primitive);
         }
+        meshes.push_back(mesh);
     }
 
     return meshes;
+}
+
+[[nodiscard]] static std::vector<GltfMaterial> load_gltf_materials(const cgltf_data* cgltf_data) {
+    std::vector<GltfMaterial> materials;
+    materials.reserve(cgltf_data->materials_count);
+
+    for (uint32_t i = 0; i < cgltf_data->materials_count; i++) {
+        GltfMaterial material{};
+
+        const cgltf_material* gltf_material = &cgltf_data->materials[i];
+
+        // pbr textures
+        if (gltf_material->has_pbr_metallic_roughness) {
+            const cgltf_pbr_metallic_roughness* metal_rough = &gltf_material->pbr_metallic_roughness;
+            memcpy(material.base_color_factors, metal_rough->base_color_factor, 4 * sizeof(float));
+            material.metallic_factor  = metal_rough->metallic_factor;
+            material.roughness_factor = metal_rough->roughness_factor;
+
+            if (metal_rough->base_color_texture.texture) {
+                TextureInfo color_tex_info{};
+                color_tex_info.index     = metal_rough->base_color_texture.texture - cgltf_data->textures;
+                color_tex_info.tex_coord = metal_rough->base_color_texture.texcoord;
+
+                material.base_color_texture = color_tex_info;
+            }
+
+            if (metal_rough->metallic_roughness_texture.texture) {
+                TextureInfo metal_rough_tex_info{};
+                metal_rough_tex_info.index     = metal_rough->metallic_roughness_texture.texture - cgltf_data->textures;
+                metal_rough_tex_info.tex_coord = metal_rough->metallic_roughness_texture.texcoord;
+
+                material.metallic_roughness_texture = metal_rough_tex_info;
+            }
+        }
+
+        // normal texture
+        if (gltf_material->normal_texture.texture) {
+            TextureInfo normal_tex_info{};
+            normal_tex_info.index     = gltf_material->normal_texture.texture - cgltf_data->textures;
+            normal_tex_info.tex_coord = gltf_material->normal_texture.texcoord;
+
+            material.normal_texture = normal_tex_info;
+        }
+
+        materials.push_back(material);
+    }
+
+    return materials;
+}
+
+[[nodiscard]] static std::vector<GltfNode> load_gltf_nodes(const cgltf_data* cgltf_data) {
+    std::vector<GltfNode> nodes;
+    nodes.reserve(cgltf_data->nodes_count);
+
+    for (uint32_t i = 0; i < cgltf_data->nodes_count; i++) {
+        GltfNode          node{};
+        const cgltf_node* gltf_node = &cgltf_data->nodes[i];
+
+        cgltf_node_transform_local(gltf_node, node.local_transform);
+        cgltf_node_transform_world(gltf_node, node.world_transform);
+
+        node.children.reserve(gltf_node->children_count);
+
+        for (uint32_t j = 0; j < gltf_node->children_count; j++) {
+            node.children.push_back(cgltf_data->nodes - gltf_node->children[j]);
+        }
+        node.mesh = cgltf_data->meshes - gltf_node->mesh;
+
+        nodes.push_back(node);
+    }
+
+    return nodes;
 }
 
 void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
@@ -624,7 +701,11 @@ void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator al
     //     load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index, &staging_buffer);
     // std::vector<VkSampler> gltf_samplers = load_gltf_samplers(gltf_data, device);
     // load an array of meshes
-    load_gltf_meshes(gltf_data, device, queue, queue_family_index, command_pool, allocator, &staging_buffer);
+    std::vector<GltfMaterial> gltf_materials = load_gltf_materials(gltf_data);
+    std::vector<GltfMesh>     gltf_meshes = load_gltf_meshes(gltf_data, device, queue, queue_family_index, command_pool, allocator, &staging_buffer);
+    std::vector<GltfNode>     gltf_nodes  = load_gltf_nodes(gltf_data);
+
+    // todo: create texture array
 
     if (staging_buffer.allocation_info.size > 0) {
         vmaDestroyBuffer(allocator, staging_buffer.buffer, staging_buffer.allocation);

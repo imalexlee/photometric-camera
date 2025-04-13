@@ -3,7 +3,7 @@
 #include "common.h"
 
 struct Vertex {
-    float color[4]{1, 0, 1, 1}; // default to magenta
+    float color[4]{1, 0, 1, 1};
     float position[3]{};
     float normal[3]{};
     float tex_coord[2][2]{};
@@ -14,7 +14,15 @@ struct TextureInfo {
     uint32_t tex_coord{};
 };
 
-struct GltfMaterial {};
+struct GltfMaterial {
+    std::optional<TextureInfo> base_color_texture{};
+    std::optional<TextureInfo> metallic_roughness_texture{};
+    std::optional<TextureInfo> normal_texture{};
+
+    float base_color_factors[4]{1, 1, 1, 1};
+    float metallic_factor{1};
+    float roughness_factor{1};
+};
 
 enum class PrimitiveMode {
     points,
@@ -27,11 +35,11 @@ enum class PrimitiveMode {
 };
 
 struct GltfPrimitive {
-    AllocatedBuffer index_buffer{};
-    VkIndexType     index_type{VK_INDEX_TYPE_UINT16};
-    AllocatedBuffer vertex_buffer{};
-    int32_t         material{};
-    PrimitiveMode   mode{PrimitiveMode::triangles};
+    std::optional<AllocatedBuffer> index_buffer;
+    VkIndexType                    index_type{VK_INDEX_TYPE_UINT16};
+    AllocatedBuffer                vertex_buffer{};
+    std::optional<uint32_t>        material;
+    PrimitiveMode                  mode{PrimitiveMode::triangles};
 };
 
 struct GltfMesh {
