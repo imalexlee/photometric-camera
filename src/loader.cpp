@@ -482,6 +482,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                 if (staging_buffer->allocation_info.size < indices_accessor->buffer_view->size) {
                     allocate_staging_buffer(allocator, indices_accessor->buffer_view->size, staging_buffer);
                 }
+                primitive.index_count = indices_accessor->count;
                 memcpy(staging_buffer->allocation_info.pMappedData,
                        static_cast<uint8_t*>(indices_accessor->buffer_view->buffer->data) + indices_accessor->buffer_view->offset,
                        indices_accessor->buffer_view->size);
@@ -672,8 +673,50 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
     return nodes;
 }
 
-void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
-               uint32_t queue_family_index) {
+[[nodiscard]] static std::vector<GltfTexture> load_gltf_textures(const cgltf_data* cgltf_data) {
+    std::vector<GltfTexture> textures;
+    textures.reserve(cgltf_data->textures_count);
+
+    for (uint32_t i = 0; i < cgltf_data->textures_count; i++) {
+        GltfTexture texture{};
+
+        const cgltf_texture* gltf_texture = &cgltf_data->textures[i];
+        if (gltf_texture->image) {
+            texture.image = gltf_texture->image - cgltf_data->images;
+        }
+
+        if (gltf_texture->sampler) {
+            texture.sampler = gltf_texture->sampler - cgltf_data->samplers;
+        }
+
+        textures.push_back(texture);
+    }
+
+    return textures;
+}
+
+[[nodiscard]] static std::vector<GltfScene> load_gltf_scenes(const cgltf_data* cgltf_data) {
+    std::vector<GltfScene> scenes;
+    scenes.reserve(cgltf_data->scenes_count);
+
+    for (uint32_t i = 0; i < cgltf_data->scenes_count; i++) {
+        const cgltf_scene* gltf_scene = &cgltf_data->scenes[i];
+
+        GltfScene scene{};
+        scene.nodes.reserve(gltf_scene->nodes_count);
+
+        for (uint32_t j = 0; j < gltf_scene->nodes_count; j++) {
+            scene.nodes.push_back(gltf_scene->nodes[i] - cgltf_data->nodes);
+        }
+
+        scenes.push_back(scene);
+    }
+
+    return scenes;
+}
+
+GltfAsset load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
+                    uint32_t queue_family_index) {
     cgltf_options options{};
     cgltf_data*   gltf_data = nullptr;
 
@@ -697,18 +740,19 @@ void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator al
 
     AllocatedBuffer staging_buffer{};
 
-    // std::vector<AllocatedImage> gltf_images =
-    //     load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index, &staging_buffer);
-    // std::vector<VkSampler> gltf_samplers = load_gltf_samplers(gltf_data, device);
-    // load an array of meshes
-    std::vector<GltfMaterial> gltf_materials = load_gltf_materials(gltf_data);
-    std::vector<GltfMesh>     gltf_meshes = load_gltf_meshes(gltf_data, device, queue, queue_family_index, command_pool, allocator, &staging_buffer);
-    std::vector<GltfNode>     gltf_nodes  = load_gltf_nodes(gltf_data);
-
-    // todo: create texture array
+    GltfAsset gltf_asset{};
+    gltf_asset.images    = load_gltf_images(load_options, gltf_data, device, allocator, command_pool, queue, queue_family_index, &staging_buffer);
+    gltf_asset.meshes    = load_gltf_meshes(gltf_data, device, queue, queue_family_index, command_pool, allocator, &staging_buffer);
+    gltf_asset.samplers  = load_gltf_samplers(gltf_data, device);
+    gltf_asset.materials = load_gltf_materials(gltf_data);
+    gltf_asset.textures  = load_gltf_textures(gltf_data);
+    gltf_asset.nodes     = load_gltf_nodes(gltf_data);
+    gltf_asset.scenes    = load_gltf_scenes(gltf_data);
 
     if (staging_buffer.allocation_info.size > 0) {
         vmaDestroyBuffer(allocator, staging_buffer.buffer, staging_buffer.allocation);
     }
     cgltf_free(gltf_data);
+
+    return gltf_asset;
 }

@@ -9,6 +9,11 @@ struct Vertex {
     float tex_coord[2][2]{};
 };
 
+struct GltfTexture {
+    std::optional<uint32_t> image;
+    std::optional<uint32_t> sampler;
+};
+
 struct TextureInfo {
     uint32_t index{};
     uint32_t tex_coord{};
@@ -37,6 +42,7 @@ enum class PrimitiveMode {
 struct GltfPrimitive {
     std::optional<AllocatedBuffer> index_buffer;
     VkIndexType                    index_type{VK_INDEX_TYPE_UINT16};
+    uint32_t                       index_count{};
     AllocatedBuffer                vertex_buffer{};
     std::optional<uint32_t>        material;
     PrimitiveMode                  mode{PrimitiveMode::triangles};
@@ -54,10 +60,24 @@ struct GltfNode {
     std::vector<uint32_t> children{};
 };
 
+struct GltfScene {
+    std::vector<uint32_t> nodes;
+};
+
+struct GltfAsset {
+    std::vector<GltfScene>      scenes{};
+    std::vector<GltfNode>       nodes{};
+    std::vector<GltfMesh>       meshes{};
+    std::vector<GltfMaterial>   materials{};
+    std::vector<GltfTexture>    textures{};
+    std::vector<AllocatedImage> images{};
+    std::vector<VkSampler>      samplers{};
+};
+
 struct LoadOptions {
     std::filesystem::path gltf_path{};
     std::filesystem::path cache_dir{};
 };
 
-void load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
-               uint32_t queue_family_index);
+[[nodiscard]] GltfAsset load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
+                                  uint32_t queue_family_index);
