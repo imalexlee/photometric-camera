@@ -1,6 +1,4 @@
 #include "swapchain.h"
-// #define GLFW_INCLUDE_VULKAN
-// #include <GLFW/glfw3.h>
 
 SwapchainContext swapchain_context_create(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface, GLFWwindow* window) {
     std::vector<VkSurfaceFormatKHR> surface_formats;

@@ -9,8 +9,8 @@
 #include <renderer.h>
 #include <thread>
 
-void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
-                                 std::function<void(VkCommandBuffer command_buffer)>&& function) {
+static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
+                                        std::function<void(VkCommandBuffer command_buffer)>&& function) {
 
     VkFence                 fence{};
     const VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
@@ -302,6 +302,8 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         VkImageViewCreateInfo   image_view_ci =
             vk_lib::image_view_create_info(static_cast<VkFormat>(ktx_texture->vkFormat), new_texture.image, &subresource_range);
         vkCreateImageView(device, &image_view_ci, nullptr, &new_texture.image_view);
+
+        new_texture.image_format = static_cast<VkFormat>(ktx_texture->vkFormat);
 
         // 6. allocate additional memory in the staging buffer allocation if needed for this texture
         if (staging_buffer->allocation_info.size < ktx_texture->dataSize) {

@@ -32,10 +32,17 @@ FetchContent_Declare(
         GIT_SUBMODULES ""
 )
 
+FetchContent_Declare(
+        glm
+        GIT_REPOSITORY https://github.com/g-truc/glm.git
+        GIT_TAG bf71a834948186f4097caa076cd2663c69a10e1e #refs/tags/1.0.1
+)
+
 FetchContent_MakeAvailable(vk-lib)
 FetchContent_MakeAvailable(GLFW)
 FetchContent_MakeAvailable(ktx)
+FetchContent_MakeAvailable(glm)
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC vk-lib glfw ktx)
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC vk-lib glfw ktx glm::glm)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC src vendor)

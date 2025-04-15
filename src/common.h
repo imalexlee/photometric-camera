@@ -24,6 +24,12 @@
 
 #include <cgltf.h>
 
+#define GLM_FORCE_INTRINSICS
+#define GLM_FORCE_INLINE
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/ext.hpp>
+#include <glm/glm.hpp>
+
 #define VK_CHECK(x)                                                                                                                                  \
     do {                                                                                                                                             \
         VkResult err = x;                                                                                                                            \
@@ -41,6 +47,7 @@
 struct AllocatedImage {
     VkImage           image{};
     VkImageView       image_view{};
+    VkFormat          image_format{};
     VkExtent3D        extent{};
     VmaAllocation     allocation{};
     VmaAllocationInfo allocation_info{};
