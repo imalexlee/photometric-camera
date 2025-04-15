@@ -39,24 +39,28 @@
         }                                                                                                                                            \
     } while (0)
 
-[[noreturn]] inline void abort_message(const std::string_view message) {
+[[noreturn]] inline void abort_message(const std::string_view message)
+{
     std::cerr << message << std::endl;
     std::abort();
 }
 
-struct AllocatedImage {
-    VkImage           image{};
-    VkImageView       image_view{};
-    VkFormat          image_format{};
-    VkExtent3D        extent{};
-    VmaAllocation     allocation{};
+struct AllocatedImage
+{
+    VkImage image{};
+    VkImageView image_view{};
+    VkFormat image_format{};
+    VkImageLayout layout{};
+    VkExtent3D extent{};
+    VmaAllocation allocation{};
     VmaAllocationInfo allocation_info{};
 };
 
-struct AllocatedBuffer {
-    VkBuffer          buffer{};
-    VkDeviceAddress   address{};
-    VkBufferView      buffer_view{};
-    VmaAllocation     allocation{};
+struct AllocatedBuffer
+{
+    VkBuffer buffer{};
+    VkDeviceAddress address{};
+    VkBufferView buffer_view{};
+    VmaAllocation allocation{};
     VmaAllocationInfo allocation_info{};
 };
