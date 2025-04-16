@@ -19,6 +19,12 @@ struct TextureInfo {
     uint32_t tex_coord{};
 };
 
+enum class GltfAlphaMode {
+    opaque,
+    mask,
+    blend,
+};
+
 struct GltfMaterial {
     std::optional<TextureInfo> base_color_texture{};
     std::optional<TextureInfo> metallic_roughness_texture{};
@@ -27,6 +33,8 @@ struct GltfMaterial {
     float base_color_factors[4]{1, 1, 1, 1};
     float metallic_factor{1};
     float roughness_factor{1};
+
+    GltfAlphaMode alpha_mode{};
 };
 
 enum class PrimitiveMode {

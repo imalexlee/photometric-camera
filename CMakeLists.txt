@@ -10,7 +10,7 @@ add_executable(${CMAKE_PROJECT_NAME} ${project_sources})
 FetchContent_Declare(
         vk-lib
         GIT_REPOSITORY https://github.com/imalexlee/vk-lib.git
-        GIT_TAG 933172e6b48a6bab9f793f8a417b64f904b5abde
+        GIT_TAG ca669255f6c2d6047baeced9df3138b1badf09a0
 )
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW docs" FORCE)
