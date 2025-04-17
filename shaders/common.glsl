@@ -2,16 +2,8 @@
 #extension GL_EXT_scalar_block_layout: enable
 #extension GL_EXT_nonuniform_qualifier: enable
 
-struct Vertex {
-    vec4 color;
-    vec3 position;
-    vec3 normal;
-    vec2 tex_coords[2];
-};
 
-layout (scalar, buffer_reference) readonly buffer VertexBuffer {
-    Vertex vertices[];
-};
+
 
 struct TextureInfo {
     uint index;
@@ -30,14 +22,25 @@ struct Material {
 layout (set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 proj;
-    vec4 eye_pos;
+    vec3 eye_pos;
 } scene_data;
 
-layout (scalar, set = 0, binding = 1) readonly buffer MaterialBuffer {
+layout (scalar, set = 1, binding = 0) readonly buffer MaterialBuffer {
     Material materials[];
 } material_buf;
 
-layout (set = 0, binding = 2) uniform sampler2D tex_samplers[];
+layout (set = 1, binding = 1) uniform sampler2D tex_samplers[];
+
+struct Vertex {
+    vec4 color;
+    vec3 position;
+    vec3 normal;
+    vec2 tex_coords[2];
+};
+
+layout (scalar, buffer_reference) readonly buffer VertexBuffer {
+    Vertex vertices[];
+};
 
 layout (push_constant) uniform PushConstants {
     mat4 model_transform;

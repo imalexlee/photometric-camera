@@ -5,12 +5,12 @@
 static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
                                         std::function<void(VkCommandBuffer command_buffer)>&& function) {
 
-    VkFence                 fence{};
+    VkFence fence{};
     const VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
     VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &fence));
 
     const VkCommandBufferAllocateInfo command_buffer_ai = vk_lib::command_buffer_allocate_info(command_pool);
-    VkCommandBuffer                   cmd_buf;
+    VkCommandBuffer cmd_buf;
     VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &cmd_buf));
 
     const VkCommandBufferBeginInfo command_buffer_bi = vk_lib::command_buffer_begin_info();
@@ -21,7 +21,7 @@ static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_p
     VK_CHECK(vkEndCommandBuffer(cmd_buf));
 
     const VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(cmd_buf);
-    const VkSubmitInfo2             submit_info_2              = vk_lib::submit_info_2(&command_buffer_submit_info);
+    const VkSubmitInfo2 submit_info_2                          = vk_lib::submit_info_2(&command_buffer_submit_info);
 
     VK_CHECK(vkQueueSubmit2(queue, 1, &submit_info_2, fence));
 
@@ -37,56 +37,81 @@ static VkShaderModule load_shader(VkDevice device, const std::filesystem::path& 
     if (!file.is_open()) {
         abort_message("Failed to find shader");
     }
-    const size_t      file_size = file.tellg();
+    const size_t file_size = file.tellg();
     std::vector<char> shader_data(file_size);
     file.seekg(0);
     file.read(shader_data.data(), static_cast<uint32_t>(file_size));
-    VkShaderModule           shader_module;
+    VkShaderModule shader_module;
     VkShaderModuleCreateInfo shader_module_ci = vk_lib::shader_module_create_info(reinterpret_cast<const uint32_t*>(shader_data.data()), file_size);
     VK_CHECK(vkCreateShaderModule(device, &shader_module_ci, nullptr, &shader_module));
     return shader_module;
 }
 
-static GraphicsPipeline create_graphics_pipeline(VkDevice device, VkFormat color_attachment_format, uint32_t width, uint32_t height) {
+static void renderer_create_graphics_pipeline(Renderer* renderer, VkDevice device, VkFormat color_attachment_format) {
 
-    VkPipelineLayoutCreateInfo layout_create_info = vk_lib::pipeline_layout_create_info();
-    VkPipelineLayout           pipeline_layout;
+    std::array set_layouts                        = {renderer->scene_descriptor_set_layout, renderer->asset_descriptor_set_layout};
+    VkPushConstantRange push_constant_range       = vk_lib::push_constant_range(VK_SHADER_STAGE_ALL, sizeof(PushConstants));
+    std::array push_constant_ranges               = {push_constant_range};
+    VkPipelineLayoutCreateInfo layout_create_info = vk_lib::pipeline_layout_create_info(set_layouts, push_constant_ranges);
+    VkPipelineLayout pipeline_layout;
     vkCreatePipelineLayout(device, &layout_create_info, nullptr, &pipeline_layout);
 
-    std::array                             color_attachment_formats = {color_attachment_format};
-    const VkPipelineRenderingCreateInfoKHR rendering_create_info    = vk_lib::pipeline_rendering_create_info(color_attachment_formats);
+    std::array color_attachment_formats                          = {color_attachment_format};
+    const VkPipelineRenderingCreateInfoKHR rendering_create_info = vk_lib::pipeline_rendering_create_info(color_attachment_formats);
 
-    VkShaderModule                         vert_shader        = load_shader(device, "../shaders/triangle.vert.spv");
-    VkShaderModule                         frag_shader        = load_shader(device, "../shaders/triangle.frag.spv");
-    VkPipelineShaderStageCreateInfo        vert_shader_stage  = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vert_shader);
-    VkPipelineShaderStageCreateInfo        frag_shader_stage  = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader);
-    std::array                             shader_stages      = {vert_shader_stage, frag_shader_stage};
-    VkPipelineVertexInputStateCreateInfo   vertex_input_state = vk_lib::pipeline_vertex_input_state_create_info();
+    VkShaderModule vert_shader                              = load_shader(device, "../shaders/indexed_draw.vert.spv");
+    VkShaderModule frag_shader                              = load_shader(device, "../shaders/gltf_pbr.frag.spv");
+    VkPipelineShaderStageCreateInfo vert_shader_stage       = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vert_shader);
+    VkPipelineShaderStageCreateInfo frag_shader_stage       = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader);
+    std::array shader_stages                                = {vert_shader_stage, frag_shader_stage};
+    VkPipelineVertexInputStateCreateInfo vertex_input_state = vk_lib::pipeline_vertex_input_state_create_info();
+    // todo: make input assembly state dynamic later on
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state =
         vk_lib::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    VkPipelineViewportStateCreateInfo      viewport_state = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
+    VkPipelineViewportStateCreateInfo viewport_state           = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
     VkPipelineRasterizationStateCreateInfo rasterization_state =
         vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
-    VkPipelineMultisampleStateCreateInfo multisample_state            = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
-    VkPipelineColorBlendAttachmentState  color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
-    std::array                           color_blends                 = {color_blend_attachment_state};
-    VkPipelineColorBlendStateCreateInfo  color_blend_state            = vk_lib::pipeline_color_blend_state_create_info(color_blends);
-    std::array                           dynamic_state_types          = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT};
-    VkPipelineDynamicStateCreateInfo     dynamic_state                = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
-    VkGraphicsPipelineCreateInfo         graphics_pipeline_ci         = vk_lib::graphics_pipeline_create_info(
+    VkPipelineMultisampleStateCreateInfo multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
+    VkPipelineColorBlendAttachmentState opaque_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
+    std::array opaque_color_blends = {opaque_color_blend_attachment_state};
+    VkPipelineColorBlendStateCreateInfo opaque_color_blend_state = vk_lib::pipeline_color_blend_state_create_info(opaque_color_blends);
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state = vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER);
+    std::array dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT};
+    VkPipelineDynamicStateCreateInfo dynamic_state = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
+    VkGraphicsPipelineCreateInfo opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         pipeline_layout, nullptr, shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state, &rasterization_state,
-        &multisample_state, &color_blend_state, nullptr, &dynamic_state, nullptr, 0, 0, nullptr, 0, &rendering_create_info);
+        &multisample_state, &opaque_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0, nullptr, 0, &rendering_create_info);
 
-    VkPipeline pipeline;
-    vkCreateGraphicsPipelines(device, nullptr, 1, &graphics_pipeline_ci, nullptr, &pipeline);
+    VkPipeline opaque_pipeline;
+    vkCreateGraphicsPipelines(device, nullptr, 1, &opaque_graphics_pipeline_ci, nullptr, &opaque_pipeline);
 
-    GraphicsPipeline graphics_pipeline{};
-    graphics_pipeline.pipeline        = pipeline;
-    graphics_pipeline.pipeline_layout = pipeline_layout;
-    graphics_pipeline.vert_shader     = vert_shader;
-    graphics_pipeline.frag_shader     = frag_shader;
+    GraphicsPipeline opaque_graphics_pipeline{};
+    opaque_graphics_pipeline.pipeline        = opaque_pipeline;
+    opaque_graphics_pipeline.pipeline_layout = pipeline_layout;
+    opaque_graphics_pipeline.vert_shader     = vert_shader;
+    opaque_graphics_pipeline.frag_shader     = frag_shader;
 
-    return graphics_pipeline;
+    renderer->opaque_graphics_pipeline = opaque_graphics_pipeline;
+
+    VkPipelineColorBlendAttachmentState transparent_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
+    std::array transparent_color_blends = {transparent_color_blend_attachment_state};
+    VkPipelineColorBlendStateCreateInfo transparent_color_blend_state = vk_lib::pipeline_color_blend_state_create_info(transparent_color_blends);
+
+    VkGraphicsPipelineCreateInfo transparent_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
+        pipeline_layout, nullptr, shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state, &rasterization_state,
+        &multisample_state, &transparent_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0, nullptr, 0, &rendering_create_info);
+
+    VkPipeline transparent_pipeline;
+    vkCreateGraphicsPipelines(device, nullptr, 1, &transparent_graphics_pipeline_ci, nullptr, &transparent_pipeline);
+
+    GraphicsPipeline transparent_graphics_pipeline{};
+    transparent_graphics_pipeline.pipeline        = transparent_pipeline;
+    transparent_graphics_pipeline.pipeline_layout = pipeline_layout;
+    transparent_graphics_pipeline.vert_shader     = vert_shader;
+    transparent_graphics_pipeline.frag_shader     = frag_shader;
+
+    renderer->transparent_graphics_pipeline = transparent_graphics_pipeline;
+
 }
 
 static VmaAllocator allocator_create(const VkContext* vk_context) {
@@ -134,23 +159,24 @@ static VmaAllocator allocator_create(const VkContext* vk_context) {
 }
 
 static void create_render_resources(Renderer* renderer) {
-    VkContext*              vk_ctx        = &renderer->vk_context;
+    VkContext* vk_ctx                     = &renderer->vk_context;
     const SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
 
-    VkExtent3D msaa_image_extent{};
-    msaa_image_extent.width  = swapchain_ctx->extent.width;
-    msaa_image_extent.height = swapchain_ctx->extent.height;
-    msaa_image_extent.depth  = 1;
+    VkExtent3D image_extent{};
+    image_extent.width  = swapchain_ctx->extent.width;
+    image_extent.height = swapchain_ctx->extent.height;
+    image_extent.depth  = 1;
 
+    // create main msaa color image
     VkImageCreateInfo msaa_image_ci =
         vk_lib::image_create_info(swapchain_ctx->surface_format.format, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                  msaa_image_extent, 1, 1, VK_SAMPLE_COUNT_4_BIT);
+                                  image_extent, 1, 1, VK_SAMPLE_COUNT_4_BIT);
 
     VmaAllocationCreateInfo allocation_ci{};
     allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
     VK_CHECK(vmaCreateImage(renderer->allocator, &msaa_image_ci, &allocation_ci, &renderer->msaa_color_image.image,
-                            &renderer->msaa_color_image.allocation, &renderer->msaa_color_image.allocation_info));
+        &renderer->msaa_color_image.allocation, &renderer->msaa_color_image.allocation_info));
 
     renderer->msaa_color_image.image_format = swapchain_ctx->surface_format.format;
 
@@ -159,30 +185,50 @@ static void create_render_resources(Renderer* renderer) {
     VkImageViewCreateInfo msaa_image_view_ci =
         vk_lib::image_view_create_info(swapchain_ctx->surface_format.format, renderer->msaa_color_image.image, &msaa_subresource_range);
     vkCreateImageView(vk_ctx->device, &msaa_image_view_ci, nullptr, &renderer->msaa_color_image.image_view);
+
+    // create depth image for the msaa color image. requires sample sample count
+    VkImageCreateInfo depth_image_ci =
+        vk_lib::image_create_info(VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                  image_extent, 1, 1, VK_SAMPLE_COUNT_4_BIT);
+
+    VK_CHECK(vmaCreateImage(renderer->allocator, &depth_image_ci, &allocation_ci, &renderer->depth_image.image, &renderer->depth_image.allocation,
+        &renderer->depth_image.allocation_info));
+
+    renderer->depth_image.image_format = VK_FORMAT_D32_SFLOAT;
+
+    VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    VkImageViewCreateInfo depth_image_view_ci =
+        vk_lib::image_view_create_info(VK_FORMAT_D32_SFLOAT, renderer->depth_image.image, &depth_subresource_range);
+
+    vkCreateImageView(vk_ctx->device, &depth_image_view_ci, nullptr, &renderer->depth_image.image_view);
 }
 
 static void destroy_render_resources(Renderer* renderer) {
     vmaDestroyImage(renderer->allocator, renderer->msaa_color_image.image, renderer->msaa_color_image.allocation);
     vkDestroyImageView(renderer->vk_context.device, renderer->msaa_color_image.image_view, nullptr);
+
+    vmaDestroyImage(renderer->allocator, renderer->depth_image.image, renderer->depth_image.allocation);
+    vkDestroyImageView(renderer->vk_context.device, renderer->depth_image.image_view, nullptr);
 }
 
 static void renderer_add_materials(Renderer* renderer, std::span<Material> materials) {
-    uint64_t           new_material_alloc_size = renderer->material_buffer.allocation_info.size + materials.size() * sizeof(Material);
+    uint64_t new_material_alloc_size   = renderer->material_buffer.allocation_info.size + materials.size() * sizeof(Material);
     VkBufferCreateInfo material_buf_ci =
         vk_lib::buffer_create_info(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, new_material_alloc_size);
     VmaAllocationCreateInfo material_buf_allocation_ci{};
     material_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     AllocatedBuffer new_material_buffer{};
     VK_CHECK(vmaCreateBuffer(renderer->allocator, &material_buf_ci, &material_buf_allocation_ci, &new_material_buffer.buffer,
-                             &new_material_buffer.allocation, &new_material_buffer.allocation_info));
+        &new_material_buffer.allocation, &new_material_buffer.allocation_info));
 
-    VkBufferCreateInfo      staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, materials.size_bytes());
+    VkBufferCreateInfo staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, materials.size_bytes());
     VmaAllocationCreateInfo staging_buf_allocation_ci{};
     staging_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     staging_buf_allocation_ci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     AllocatedBuffer staging_buffer;
     VK_CHECK(vmaCreateBuffer(renderer->allocator, &staging_buf_ci, &staging_buf_allocation_ci, &staging_buffer.buffer, &staging_buffer.allocation,
-                             &staging_buffer.allocation_info));
+        &staging_buffer.allocation_info));
 
     memcpy(staging_buffer.allocation_info.pMappedData, materials.data(), materials.size_bytes());
 
@@ -214,8 +260,8 @@ static void renderer_add_materials(Renderer* renderer, std::span<Material> mater
 
     // update the descriptor for the materials
     VkDescriptorBufferInfo descriptor_buffer_info = vk_lib::descriptor_buffer_info(renderer->material_buffer.buffer);
-    VkWriteDescriptorSet   descriptor_write =
-        vk_lib::write_descriptor_set(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, renderer->descriptor_set, nullptr, &descriptor_buffer_info);
+    VkWriteDescriptorSet descriptor_write         =
+        vk_lib::write_descriptor_set(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, renderer->asset_descriptor_set, nullptr, &descriptor_buffer_info);
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &descriptor_write, 0, nullptr);
 }
 
@@ -224,13 +270,14 @@ static void renderer_add_textures(Renderer* renderer, std::span<Texture> texture
     std::vector<VkDescriptorImageInfo> descriptor_image_infos;
     descriptor_image_infos.reserve(textures.size());
     for (const Texture& texture : textures) {
-        VkSampler             sampler    = texture.sampler == nullptr ? renderer->default_sampler : texture.sampler;
+        VkSampler sampler                = texture.sampler == nullptr ? renderer->default_sampler : texture.sampler;
         VkDescriptorImageInfo image_info = vk_lib::descriptor_image_info(texture.image.image_view, texture.image.layout, sampler);
         descriptor_image_infos.push_back(image_info);
     }
 
     VkWriteDescriptorSet write_descriptor_set =
-        vk_lib::write_descriptor_set(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, renderer->descriptor_set, descriptor_image_infos.data(), nullptr,
+        vk_lib::write_descriptor_set(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, renderer->asset_descriptor_set, descriptor_image_infos.data(),
+                                     nullptr,
                                      nullptr, renderer->texture_count, descriptor_image_infos.size());
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &write_descriptor_set, 0, nullptr);
     renderer->texture_count += textures.size();
@@ -241,41 +288,49 @@ static void renderer_init_shader_data(Renderer* renderer) {
 
     constexpr uint32_t variable_texture_count = 5000;
 
-    VkDescriptorPoolSize       scene_data_pool_size = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-    VkDescriptorPoolSize       materials_pool_size  = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
-    VkDescriptorPoolSize       textures_pool_size   = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
-    std::array                 pool_sizes           = {scene_data_pool_size, materials_pool_size, textures_pool_size};
-    VkDescriptorPoolCreateInfo descriptor_pool_ci   = vk_lib::descriptor_pool_create_info(1, pool_sizes);
+    VkDescriptorPoolSize scene_data_pool_size     = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
+    VkDescriptorPoolSize materials_pool_size      = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+    VkDescriptorPoolSize textures_pool_size       = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
+    std::array pool_sizes                         = {scene_data_pool_size, materials_pool_size, textures_pool_size};
+    VkDescriptorPoolCreateInfo descriptor_pool_ci = vk_lib::descriptor_pool_create_info(2, pool_sizes);
 
     VK_CHECK(vkCreateDescriptorPool(vk_ctx->device, &descriptor_pool_ci, nullptr, &renderer->descriptor_pool));
 
-    VkDescriptorSetLayoutBinding scene_data_layout_binding = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    VkDescriptorSetLayoutBinding materials_layout_binding  = vk_lib::descriptor_set_layout_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    VkDescriptorSetLayoutBinding textures_layout_binding =
-        vk_lib::descriptor_set_layout_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
+    // scene descriptor layout
+    VkDescriptorSetLayoutBinding scene_data_layout_binding         = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    std::array scene_layout_bindings                               = {scene_data_layout_binding};
+    VkDescriptorSetLayoutCreateInfo scene_descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(scene_layout_bindings);
+    vkCreateDescriptorSetLayout(vk_ctx->device, &scene_descriptor_set_layout_ci, nullptr, &renderer->scene_descriptor_set_layout);
 
-    std::array layout_bindings = {scene_data_layout_binding, materials_layout_binding, textures_layout_binding};
-
-    std::array<VkDescriptorBindingFlags, 3> binding_flags = {0, 0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
-
+    // assets descriptor layout
+    VkDescriptorSetLayoutBinding materials_layout_binding = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    VkDescriptorSetLayoutBinding textures_layout_binding  =
+        vk_lib::descriptor_set_layout_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
+    std::array asset_layout_bindings                      = {materials_layout_binding, textures_layout_binding};
+    std::array<VkDescriptorBindingFlags, 2> binding_flags = {0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
     VkDescriptorSetLayoutBindingFlagsCreateInfo binding_flags_ci{};
-    binding_flags_ci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    binding_flags_ci.bindingCount  = binding_flags.size();
-    binding_flags_ci.pBindingFlags = binding_flags.data();
-    binding_flags_ci.pNext         = nullptr;
+    binding_flags_ci.sType                                   = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    binding_flags_ci.bindingCount                            = binding_flags.size();
+    binding_flags_ci.pBindingFlags                           = binding_flags.data();
+    binding_flags_ci.pNext                                   = nullptr;
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(asset_layout_bindings, 0, &binding_flags_ci);
+    vkCreateDescriptorSetLayout(vk_ctx->device, &descriptor_set_layout_ci, nullptr, &renderer->asset_descriptor_set_layout);
 
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(layout_bindings, 0, &binding_flags_ci);
-    vkCreateDescriptorSetLayout(vk_ctx->device, &descriptor_set_layout_ci, nullptr, &renderer->descriptor_set_layout);
+    // scene descriptors allocation
+    renderer->scene_descriptor_sets.resize(renderer->frames.size());
+    VkDescriptorSetAllocateInfo scene_desc_set_ai =
+        vk_lib::descriptor_set_allocate_info(&renderer->scene_descriptor_set_layout, renderer->descriptor_pool, renderer->frames.size());
+    VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &scene_desc_set_ai, renderer->scene_descriptor_sets.data()));
 
+    // asset descriptor allocation
     VkDescriptorSetVariableDescriptorCountAllocateInfoEXT variable_info{};
-    variable_info.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
-    variable_info.descriptorSetCount = 1;
-    variable_info.pDescriptorCounts  = &variable_texture_count;
-    variable_info.descriptorSetCount = 1;
-
-    VkDescriptorSetAllocateInfo desc_set_ai =
-        vk_lib::descriptor_set_allocate_info(&renderer->descriptor_set_layout, renderer->descriptor_pool, 1, &variable_info);
-    VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &desc_set_ai, &renderer->descriptor_set));
+    variable_info.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
+    variable_info.descriptorSetCount              = 1;
+    variable_info.pDescriptorCounts               = &variable_texture_count;
+    variable_info.descriptorSetCount              = 1;
+    VkDescriptorSetAllocateInfo asset_desc_set_ai =
+        vk_lib::descriptor_set_allocate_info(&renderer->asset_descriptor_set_layout, renderer->descriptor_pool, 1, &variable_info);
+    VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &asset_desc_set_ai, &renderer->asset_descriptor_set));
 
     // create default material
     TextureInfo default_texture_info{};
@@ -298,13 +353,13 @@ static void renderer_init_shader_data(Renderer* renderer) {
     VK_CHECK(vkCreateSampler(renderer->vk_context.device, &default_sampler_ci, nullptr, &renderer->default_sampler));
 
     // create image with one pixel?
-    VkBufferCreateInfo      staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 4);
+    VkBufferCreateInfo staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 4);
     VmaAllocationCreateInfo staging_buf_allocation_ci{};
     staging_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     staging_buf_allocation_ci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     AllocatedBuffer staging_buffer;
     VK_CHECK(vmaCreateBuffer(renderer->allocator, &staging_buf_ci, &staging_buf_allocation_ci, &staging_buffer.buffer, &staging_buffer.allocation,
-                             &staging_buffer.allocation_info));
+        &staging_buffer.allocation_info));
 
     uint8_t image_data[4] = {255, 255, 255, 255};
     memcpy(staging_buffer.allocation_info.pMappedData, image_data, 4);
@@ -332,7 +387,7 @@ static void renderer_init_shader_data(Renderer* renderer) {
             vkCmdPipelineBarrier2(cmd_buf, &pre_transfer_dependency_info);
 
             VkImageSubresourceLayers image_subresource_layers = vk_lib::image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT);
-            VkBufferImageCopy        copy_region              = vk_lib::buffer_image_copy(image_subresource_layers, vk_lib::extent_3d(1, 1));
+            VkBufferImageCopy copy_region                     = vk_lib::buffer_image_copy(image_subresource_layers, vk_lib::extent_3d(1, 1));
             vkCmdCopyBufferToImage(cmd_buf, staging_buffer.buffer, renderer->default_texture_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                                    &copy_region);
 
@@ -351,6 +406,19 @@ static void renderer_init_shader_data(Renderer* renderer) {
     std::array default_textures = {default_texture};
     renderer_add_textures(renderer, default_textures);
 
+    // scene data buffers
+    VkBufferCreateInfo scene_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(SceneData));
+    VmaAllocationCreateInfo scene_buf_allocation_ci{};
+    scene_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO;
+    scene_buf_allocation_ci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    for (uint32_t i = 0; i < renderer->frames.size(); i++) {
+        AllocatedBuffer scene_buffer;
+        VK_CHECK(vmaCreateBuffer(renderer->allocator, &scene_buf_ci, &scene_buf_allocation_ci, &scene_buffer.buffer, &scene_buffer.allocation,
+            &scene_buffer.allocation_info));
+
+        renderer->scene_data_buffers.push_back(scene_buffer);
+    }
+
     vmaDestroyBuffer(renderer->allocator, staging_buffer.buffer, staging_buffer.allocation);
 }
 
@@ -363,9 +431,13 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
                                 renderer->vk_context.graphics_queue, renderer->vk_context.queue_family);
 
     // add new draw objects
-    for (const GltfMesh& gltf_mesh : asset.meshes) {
-        for (const GltfPrimitive& gltf_primitive : gltf_mesh.primitives) {
+    for (const GltfNode& node : asset.nodes) {
+        const GltfMesh* gltf_mesh = &asset.meshes[node.mesh];
+        for (const GltfPrimitive& gltf_primitive : gltf_mesh->primitives) {
             DrawObject new_draw_object{};
+
+            new_draw_object.transform = glm::make_mat4(node.world_transform);
+
             if (gltf_primitive.index_buffer.has_value()) {
                 new_draw_object.index_buffer = gltf_primitive.index_buffer.value();
             } else {
@@ -388,7 +460,7 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
             } else {
                 // default material index
                 new_draw_object.material_index = 0;
-                // assume opaque
+                // assume opaque when no material
                 renderer->opaque_draws.push_back(new_draw_object);
             }
         }
@@ -401,8 +473,8 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
         Material new_material{};
         new_material.base_color_factors = glm::vec4(gltf_material.base_color_factors[0], gltf_material.base_color_factors[1],
                                                     gltf_material.base_color_factors[2], gltf_material.base_color_factors[3]);
-        new_material.metallic_factor    = gltf_material.metallic_factor;
-        new_material.roughness_factor   = gltf_material.roughness_factor;
+        new_material.metallic_factor  = gltf_material.metallic_factor;
+        new_material.roughness_factor = gltf_material.roughness_factor;
 
         // I will offset the texture indices by how many textures we already have from other gltf assets
         if (gltf_material.normal_texture.has_value()) {
@@ -446,14 +518,28 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
     }
 
     renderer_add_textures(renderer, textures);
+
+    renderer->assets.push_back(asset);
+}
+
+static void renderer_update_scene_data(Renderer* renderer, uint32_t frame_index) {
+    // for now, do a constant projection
+    SceneData scene_data{};
+    scene_data.eye_pos = {0, 0, -1};
+    float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
+
+    scene_data.proj = glm::perspective(glm::radians(90.f), aspect_ratio, 1000.f, 0.01f);
+    scene_data.view = glm::lookAt(scene_data.eye_pos, {0, 0, 0}, {0, -1, 0});
+
+    VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
 }
 
 void renderer_draw(Renderer* renderer) {
 
-    VkContext*        vk_ctx        = &renderer->vk_context;
+    VkContext* vk_ctx               = &renderer->vk_context;
     SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
-    const uint32_t    frame_index   = renderer->curr_frame % swapchain_ctx->images.size();
-    const Frame*      current_frame = &renderer->frames[frame_index];
+    const uint32_t frame_index      = renderer->curr_frame % swapchain_ctx->images.size();
+    const Frame* current_frame      = &renderer->frames[frame_index];
 
     VkCommandBuffer command_buffer = current_frame->command_buffer;
 
@@ -476,28 +562,37 @@ void renderer_draw(Renderer* renderer) {
     VK_CHECK(vkBeginCommandBuffer(command_buffer, &begin_info));
 
     const VkViewport viewport = vk_lib::viewport(static_cast<float>(swapchain_ctx->extent.width), static_cast<float>(swapchain_ctx->extent.height));
-    const VkRect2D   scissor  = vk_lib::rect_2d(swapchain_ctx->extent);
+    const VkRect2D scissor    = vk_lib::rect_2d(swapchain_ctx->extent);
 
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-    const VkImageSubresourceRange subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+    const VkImageSubresourceRange color_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
     const VkImageMemoryBarrier2 msaa_draw_image_memory_barrier =
-        vk_lib::image_memory_barrier_2(renderer->msaa_color_image.image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
+        vk_lib::image_memory_barrier_2(renderer->msaa_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    VkImage     swapchain_image      = swapchain_ctx->images[swapchain_image_index];
+    const VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+
+    const VkImageMemoryBarrier2 depth_image_memory_barrier =
+        vk_lib::image_memory_barrier_2(renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
+                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family,
+                                       VK_PIPELINE_STAGE_2_CLEAR_BIT,
+                                       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                                       VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT);
+
+    VkImage swapchain_image          = swapchain_ctx->images[swapchain_image_index];
     VkImageView swapchain_image_view = swapchain_ctx->image_views[swapchain_image_index];
 
     const VkImageMemoryBarrier2 resolve_draw_image_memory_barrier =
-        vk_lib::image_memory_barrier_2(swapchain_image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier};
+    std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, depth_image_memory_barrier};
 
     const VkDependencyInfo draw_dependency_info = vk_lib::dependency_info_batch(draw_image_memory_barriers, {}, {});
     vkCmdPipelineBarrier2(command_buffer, &draw_dependency_info);
@@ -509,20 +604,60 @@ void renderer_draw(Renderer* renderer) {
         renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
         VK_ATTACHMENT_STORE_OP_DONT_CARE, &clear_value, VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-    std::array               color_attachment_infos = {color_attachment_info};
-    const VkRect2D           render_area            = vk_lib::rect_2d(swapchain_ctx->extent);
-    const VkRenderingInfoKHR rendering_info         = vk_lib::rendering_info(render_area, color_attachment_infos);
+    std::array color_attachment_infos = {color_attachment_info};
+
+    VkRenderingAttachmentInfo depth_attachment_info = vk_lib::rendering_attachment_info(renderer->depth_image.image_view,
+                                                                                        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                                                                        VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                                                                        VK_ATTACHMENT_STORE_OP_DONT_CARE, &clear_value);
+
+    const VkRect2D render_area              = vk_lib::rect_2d(swapchain_ctx->extent);
+    const VkRenderingInfoKHR rendering_info = vk_lib::rendering_info(render_area, color_attachment_infos, &depth_attachment_info);
 
     vkCmdBeginRenderingKHR(command_buffer, &rendering_info);
 
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->graphics_pipeline.pipeline);
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->opaque_graphics_pipeline.pipeline);
 
-    vkCmdDraw(command_buffer, 3, 1, 0, 0);
+    renderer_update_scene_data(renderer, frame_index);
+
+    // both opaque and transparent have the same pipeline layouts. just use the opaque pipeline layout
+    std::array desc_sets = {renderer->scene_descriptor_sets[frame_index], renderer->asset_descriptor_set};
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->opaque_graphics_pipeline.pipeline_layout, 0, desc_sets.size(),
+                            desc_sets.data(), 0, nullptr);
+
+    for (const DrawObject& opaque_draw : renderer->opaque_draws) {
+        PushConstants push_constants{};
+        push_constants.model_transform    = opaque_draw.transform;
+        push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
+        push_constants.material_index     = opaque_draw.material_index;
+
+        vkCmdPushConstants(command_buffer, renderer->opaque_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants),
+                           &push_constants);
+
+        vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
+        vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
+    }
+
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->transparent_graphics_pipeline.pipeline);
+
+    for (const DrawObject& transparent_draw : renderer->transparent_draws) {
+        PushConstants push_constants{};
+        push_constants.model_transform    = transparent_draw.transform;
+        push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
+        push_constants.material_index     = transparent_draw.material_index;
+
+        vkCmdPushConstants(command_buffer, renderer->transparent_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants),
+                           &push_constants);
+
+        vkCmdBindIndexBuffer(command_buffer, transparent_draw.index_buffer.buffer, 0, transparent_draw.index_type);
+        vkCmdDrawIndexed(command_buffer, transparent_draw.index_count, 1, 0, 0, 0);
+    }
 
     vkCmdEndRenderingKHR(command_buffer);
 
     const VkImageMemoryBarrier2 resolve_present_image_memory_barrier =
-        vk_lib::image_memory_barrier_2(swapchain_image, subresource_range, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                                        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_NONE);
 
@@ -576,10 +711,11 @@ Renderer renderer_create() {
     renderer.frames = frames_create(vk_ctx->device, vk_ctx->frame_command_pool, swapchain_ctx->image_views, swapchain_ctx->images,
                                     vk_ctx->queue_family, renderer.msaa_color_image.image_view);
 
-    renderer.graphics_pipeline =
-        create_graphics_pipeline(vk_ctx->device, swapchain_ctx->surface_format.format, swapchain_ctx->extent.width, swapchain_ctx->extent.height);
-
     renderer_init_shader_data(&renderer);
+
+    renderer_create_graphics_pipeline(&renderer, vk_ctx->device, swapchain_ctx->surface_format.format);
+
+    renderer_add_gltf_asset(&renderer, "../assets/DamagedHelmet.glb");
 
     return renderer;
 }
