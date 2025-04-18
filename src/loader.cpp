@@ -290,14 +290,15 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         VkExtent3D        base_image_extent = vk_lib::extent_3d(ktx_texture->baseWidth, ktx_texture->baseHeight);
         VkImageCreateInfo image_ci =
             vk_lib::image_create_info(static_cast<VkFormat>(ktx_texture->vkFormat), VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                      base_image_extent, VK_IMAGE_LAYOUT_UNDEFINED, ktx_texture->numLevels);
+                                      base_image_extent, ktx_texture->numLevels);
 
         VmaAllocationCreateInfo texture_allocation_ci{};
         texture_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
         AllocatedImage new_texture{};
         new_texture.extent = base_image_extent;
-        vmaCreateImage(allocator, &image_ci, &texture_allocation_ci, &new_texture.image, &new_texture.allocation, &new_texture.allocation_info);
+        VK_CHECK(
+            vmaCreateImage(allocator, &image_ci, &texture_allocation_ci, &new_texture.image, &new_texture.allocation, &new_texture.allocation_info));
 
         // create image view
         VkImageSubresourceRange subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT, ktx_texture->numLevels);

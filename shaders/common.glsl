@@ -3,8 +3,6 @@
 #extension GL_EXT_nonuniform_qualifier: enable
 
 
-
-
 struct TextureInfo {
     uint index;
     uint tex_coord;
