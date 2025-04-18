@@ -17,12 +17,6 @@ std::vector<Frame> frames_create(VkDevice device, VkCommandPool command_pool, st
 
         VkFenceCreateInfo fence_ci = vk_lib::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
         VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &frame->in_flight_fence));
-
-        frame->command_buffer_submit_info = vk_lib::command_buffer_submit_info(frame->command_buffer);
-        frame->wait_semaphore_submit_info =
-            vk_lib::semaphore_submit_info(frame->image_available_semaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
-        frame->signal_semaphore_submit_info =
-            vk_lib::semaphore_submit_info(frame->render_finished_semaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
     }
 
     return frames;

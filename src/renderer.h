@@ -2,6 +2,7 @@
 #include "common.h"
 
 #include "loader.h"
+#include "window.h"
 #include <frame.h>
 #include <swapchain.h>
 #include <vk_context.h>
@@ -50,13 +51,14 @@ struct DrawObject {
 };
 
 struct Renderer {
-    VkContext                    vk_context{};
-    SwapchainContext             swapchain_context{};
+    VkContext        vk_context{};
+    SwapchainContext swapchain_context{};
+
     std::vector<Frame>           frames{};
+    Window                       window{};
     uint64_t                     curr_frame{};
     GraphicsPipeline             opaque_graphics_pipeline{};
     GraphicsPipeline             transparent_graphics_pipeline{};
-    GLFWwindow*                  window{};
     VmaAllocator                 allocator{};
     AllocatedImage               msaa_color_image{};
     AllocatedImage               depth_image{};
@@ -77,6 +79,8 @@ struct Renderer {
     uint32_t                     texture_count{};
     std::vector<DrawObject>      opaque_draws;
     std::vector<DrawObject>      transparent_draws;
+
+    float frame_time{};
 };
 
 Renderer renderer_create();

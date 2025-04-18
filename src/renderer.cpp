@@ -1,5 +1,7 @@
 #include "renderer.h"
 #include "loader.h"
+
+#include <camera.h>
 #include <functional>
 
 static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
@@ -71,7 +73,7 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkDevice devic
         vk_lib::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     VkPipelineViewportStateCreateInfo      viewport_state = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
     VkPipelineRasterizationStateCreateInfo rasterization_state =
-        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_CLOCKWISE);
     VkPipelineMultisampleStateCreateInfo  multisample_state                   = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
     VkPipelineColorBlendAttachmentState   opaque_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
     std::array                            opaque_color_blends                 = {opaque_color_blend_attachment_state};
@@ -524,13 +526,14 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
 }
 
 static void renderer_update_scene_data(Renderer* renderer, uint32_t frame_index) {
-    // for now, do a constant projection
+    camera_update(renderer->frame_time);
     SceneData scene_data{};
-    scene_data.eye_pos = {1, 0, 2};
     float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
 
-    scene_data.proj = glm::perspective(glm::radians(90.f), aspect_ratio, 1000.f, 0.01f);
-    scene_data.view = glm::lookAt(scene_data.eye_pos, {0, 0, 0}, {0, -1, 0});
+    scene_data.proj = glm::perspective(glm::radians(70.f), aspect_ratio, 10000.f, 0.01f);
+    scene_data.proj[1][1] *= -1;
+
+    scene_data.view = camera_view();
 
     VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
 
@@ -542,6 +545,20 @@ static void renderer_update_scene_data(Renderer* renderer, uint32_t frame_index)
 }
 
 void renderer_draw(Renderer* renderer) {
+    static auto last_frame_time    = std::chrono::high_resolution_clock::now();
+    auto        current_frame_time = std::chrono::high_resolution_clock::now();
+    auto        duration           = std::chrono::duration<float>(current_frame_time - last_frame_time);
+    float       raw_frame_time     = duration.count();
+
+    constexpr float max_frame_time     = 0.1f; // 100ms (10 FPS)
+    float           clamped_frame_time = std::min(raw_frame_time, max_frame_time);
+
+    constexpr float smoothing_factor    = 0.5f;
+    static float    smoothed_frame_time = 0.016f;
+    smoothed_frame_time                 = smoothing_factor * clamped_frame_time + (1.0f - smoothing_factor) * smoothed_frame_time;
+
+    renderer->frame_time = smoothed_frame_time;
+    last_frame_time      = current_frame_time;
 
     VkContext*        vk_ctx        = &renderer->vk_context;
     SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
@@ -553,18 +570,18 @@ void renderer_draw(Renderer* renderer) {
     VK_CHECK(vkWaitForFences(vk_ctx->device, 1, &current_frame->in_flight_fence, true, UINT64_MAX));
     VK_CHECK(vkResetFences(vk_ctx->device, 1, &current_frame->in_flight_fence));
 
+    renderer_update_scene_data(renderer, frame_index);
+
     uint32_t swapchain_image_index;
     VkResult swapchain_result = vkAcquireNextImageKHR(vk_ctx->device, swapchain_ctx->swapchain, UINT64_MAX, current_frame->image_available_semaphore,
                                                       nullptr, &swapchain_image_index);
 
     if (swapchain_result == VK_ERROR_OUT_OF_DATE_KHR || swapchain_result == VK_SUBOPTIMAL_KHR) {
-        swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window);
+        swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window.glfw_window);
         destroy_render_resources(renderer);
         create_render_resources(renderer);
         return;
     }
-
-    renderer_update_scene_data(renderer, frame_index);
 
     VK_CHECK(vkResetCommandBuffer(command_buffer, 0));
 
@@ -670,8 +687,13 @@ void renderer_draw(Renderer* renderer) {
 
     VK_CHECK(vkEndCommandBuffer(command_buffer));
 
-    VkSubmitInfo2 submit_info_2 = vk_lib::submit_info_2(&current_frame->command_buffer_submit_info, &current_frame->wait_semaphore_submit_info,
-                                                        &current_frame->signal_semaphore_submit_info);
+    VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(current_frame->command_buffer);
+    VkSemaphoreSubmitInfo     wait_semaphore_submit_info =
+        vk_lib::semaphore_submit_info(current_frame->image_available_semaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
+    VkSemaphoreSubmitInfo signal_semaphore_submit_info =
+        vk_lib::semaphore_submit_info(current_frame->render_finished_semaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
+
+    VkSubmitInfo2 submit_info_2 = vk_lib::submit_info_2(&command_buffer_submit_info, &wait_semaphore_submit_info, &signal_semaphore_submit_info);
 
     VK_CHECK(vkQueueSubmit2(vk_ctx->graphics_queue, 1, &submit_info_2, current_frame->in_flight_fence));
 
@@ -680,7 +702,7 @@ void renderer_draw(Renderer* renderer) {
     swapchain_result = vkQueuePresentKHR(vk_ctx->present_queue, &present);
 
     if (swapchain_result == VK_ERROR_OUT_OF_DATE_KHR || swapchain_result == VK_SUBOPTIMAL_KHR) {
-        swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window);
+        swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window.glfw_window);
         destroy_render_resources(renderer);
         create_render_resources(renderer);
         return;
@@ -689,19 +711,14 @@ void renderer_draw(Renderer* renderer) {
 }
 
 Renderer renderer_create() {
-    if (!glfwInit()) {
-        abort_message("GLFW cannot be initialized");
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
     Renderer renderer{};
 
-    renderer.window     = glfwCreateWindow(1920, 1080, "Photometric Camera", nullptr, nullptr);
-    renderer.vk_context = vk_context_create(renderer.window);
+    renderer.window     = window_create();
+    renderer.vk_context = vk_context_create(renderer.window.glfw_window);
     VkContext* vk_ctx   = &renderer.vk_context;
 
-    renderer.swapchain_context            = swapchain_context_create(vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer.window);
+    renderer.swapchain_context = swapchain_context_create(vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer.window.glfw_window);
     const SwapchainContext* swapchain_ctx = &renderer.swapchain_context;
 
     const VkCommandPoolCreateInfo command_pool_ci =
