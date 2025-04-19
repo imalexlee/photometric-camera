@@ -16,7 +16,7 @@ VkInstance create_instance() {
 #ifndef NDEBUG
     layers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
-    const VkApplicationInfo    app_info    = vk_lib::application_info("hello triangle", "engine name", VK_API_VERSION_1_3);
+    const VkApplicationInfo    app_info    = vk_lib::application_info("Photometric Camera", "engine name", VK_API_VERSION_1_3);
     const VkInstanceCreateInfo instance_ci = vk_lib::instance_create_info(&app_info, layers, extensions);
     VkInstance                 instance;
     VK_CHECK(vk_lib::create_instance_with_entrypoints(&instance_ci, &instance));

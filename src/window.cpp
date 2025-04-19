@@ -17,7 +17,7 @@ Window window_create() {
     glfwSetCursorPosCallback(window.glfw_window, camera_cursor_callback);
     glfwSetMouseButtonCallback(window.glfw_window, camera_mouse_button_callback);
 
-    glfwSetInputMode(window.glfw_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    // glfwSetInputMode(window.glfw_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     if (glfwRawMouseMotionSupported()) {
         glfwSetInputMode(window.glfw_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }

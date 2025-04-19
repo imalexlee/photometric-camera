@@ -62,10 +62,10 @@ struct GltfMesh {
 };
 
 struct GltfNode {
-    float                 local_transform[16]{};
-    float                 world_transform[16]{};
-    uint32_t              mesh;
-    std::vector<uint32_t> children{};
+    float                   local_transform[16]{};
+    float                   world_transform[16]{};
+    std::optional<uint32_t> mesh;
+    std::vector<uint32_t>   children{};
 };
 
 struct GltfScene {

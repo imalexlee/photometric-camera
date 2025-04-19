@@ -191,12 +191,22 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
     std::vector<AllocatedImage> gltf_images;
     gltf_images.reserve(cgltf_data->images_count);
     for (uint32_t i = 0; i < cgltf_data->images_count; i++) {
+        std::cout << "loading image: " << std::to_string(i) << std::endl;
 
         // 1. pull formats from images
-        int                      width, height, component_count;
-        const cgltf_buffer_view* buffer_view = cgltf_data->images[i].buffer_view;
-        stbi_info_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset, static_cast<int>(buffer_view->size), &width,
-                              &height, &component_count);
+        int width, height, component_count;
+
+        const cgltf_buffer_view* buffer_view;
+        std::string              uri;
+
+        if (cgltf_data->file_type == cgltf_file_type_glb) {
+            buffer_view = cgltf_data->images[i].buffer_view;
+            stbi_info_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset, static_cast<int>(buffer_view->size), &width,
+                                  &height, &component_count);
+        } else {
+            uri = load_options->gltf_path.parent_path().string() + "/" + cgltf_data->images[i].uri;
+            stbi_info(uri.c_str(), &width, &height, &component_count);
+        }
 
         ktx_transcode_fmt_e ktx_transcode_format{};
         VkFormat            uncompressed_format{};
@@ -225,8 +235,14 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         // 3. if caller didn't provide a cache directory, or if the image was not found there, load and compress the image now
         if (!cache_img_exists) {
 
-            unsigned char* img_data = stbi_load_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset,
-                                                            static_cast<int>(buffer_view->size), &width, &height, &component_count, 0);
+            uint8_t* img_data{};
+            if (cgltf_data->file_type == cgltf_file_type_glb) {
+                img_data = stbi_load_from_memory(static_cast<uint8_t*>(buffer_view->buffer->data) + buffer_view->offset,
+                                                 static_cast<int>(buffer_view->size), &width, &height, &component_count, 0);
+            } else {
+                img_data = stbi_load(uri.c_str(), &width, &height, &component_count, 0);
+            }
+
             if (img_data == nullptr) {
                 abort_message(stbi_failure_reason());
             }
@@ -462,13 +478,13 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
     std::vector<GltfMesh> meshes;
     meshes.reserve(cgltf_data->meshes_count);
 
-    for (uint32_t i = 0; i < cgltf_data->meshes_count; i++) {
+    for (uint64_t i = 0; i < cgltf_data->meshes_count; i++) {
         const cgltf_mesh* gltf_mesh = &cgltf_data->meshes[i];
 
         GltfMesh mesh;
 
         mesh.primitives.reserve(gltf_mesh->primitives_count);
-        for (uint32_t j = 0; j < gltf_mesh->primitives_count; j++) {
+        for (uint64_t j = 0; j < gltf_mesh->primitives_count; j++) {
             const cgltf_primitive* gltf_primitive = &gltf_mesh->primitives[j];
 
             GltfPrimitive primitive{};
@@ -491,7 +507,8 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                 }
                 primitive.index_count = indices_accessor->count;
                 memcpy(staging_buffer->allocation_info.pMappedData,
-                       static_cast<uint8_t*>(indices_accessor->buffer_view->buffer->data) + indices_accessor->buffer_view->offset,
+                       static_cast<uint8_t*>(indices_accessor->buffer_view->buffer->data) + indices_accessor->offset +
+                           indices_accessor->buffer_view->offset,
                        indices_accessor->buffer_view->size);
 
                 VkBufferCopy buffer_copy = vk_lib::buffer_copy(indices_accessor->buffer_view->size);
@@ -502,9 +519,11 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                 VmaAllocationCreateInfo allocation_ci{};
                 allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-                primitive.index_buffer = AllocatedBuffer{};
-                VK_CHECK(vmaCreateBuffer(allocator, &indices_buffer_ci, &allocation_ci, &primitive.index_buffer->buffer,
-                                         &primitive.index_buffer->allocation, &primitive.index_buffer->allocation_info));
+                AllocatedBuffer index_buffer{};
+                VK_CHECK(vmaCreateBuffer(allocator, &indices_buffer_ci, &allocation_ci, &index_buffer.buffer, &index_buffer.allocation,
+                                         &index_buffer.allocation_info));
+
+                primitive.index_buffer = index_buffer;
 
                 vk_command_immediate_submit(device, command_pool, queue, [&](VkCommandBuffer cmd_buf) {
                     vkCmdCopyBuffer(cmd_buf, staging_buffer->buffer, primitive.index_buffer->buffer, 1, &buffer_copy);
@@ -513,7 +532,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 
             // pre-allocate staging buffer to hold all per-vertex attributes
             uint64_t attribute_count = 0;
-            for (uint32_t k = 0; k < gltf_primitive->attributes_count; k++) {
+            for (uint64_t k = 0; k < gltf_primitive->attributes_count; k++) {
                 attribute_count = std::max(attribute_count, gltf_primitive->attributes[k].data->count);
             }
 
@@ -526,31 +545,30 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
             Vertex* vertex_arr = static_cast<Vertex*>(staging_buffer->allocation_info.pMappedData);
 
             // load all per-vertex attributes
-            for (uint32_t k = 0; k < gltf_primitive->attributes_count; k++) {
+            for (uint64_t k = 0; k < gltf_primitive->attributes_count; k++) {
                 const cgltf_attribute* gltf_attribute = &gltf_primitive->attributes[k];
                 // get vertex positions
                 if (gltf_attribute->type == cgltf_attribute_type_position) {
                     const cgltf_accessor* position_accessor = gltf_attribute->data;
                     // for now, assume its always vec3's of 32f's
-                    for (uint32_t position_idx = 0; position_idx < position_accessor->count; position_idx++) {
-                        const float* gltf_position =
-                            reinterpret_cast<const float*>(static_cast<uint8_t*>(position_accessor->buffer_view->buffer->data) +
-                                                           position_accessor->buffer_view->offset + position_idx * position_accessor->stride);
+                    for (uint64_t position_idx = 0; position_idx < position_accessor->count; position_idx++) {
+                        const float* gltf_position = reinterpret_cast<const float*>(
+                            static_cast<uint8_t*>(position_accessor->buffer_view->buffer->data) + position_accessor->offset +
+                            position_accessor->buffer_view->offset + position_idx * position_accessor->stride);
 
-                        memcpy(vertex_arr[position_idx].position, gltf_position, 3 * sizeof(float));
+                        memcpy(vertex_arr[position_idx].position, gltf_position, position_accessor->stride);
                     }
                 }
 
                 // get vertex normals
                 if (gltf_attribute->type == cgltf_attribute_type_normal) {
                     const cgltf_accessor* normal_accessor = gltf_attribute->data;
-                    // for now, assume its always vec3's of 32f's
-                    for (uint32_t normal_idx = 0; normal_idx < normal_accessor->count; normal_idx++) {
-                        const float* gltf_normal =
-                            reinterpret_cast<const float*>(static_cast<uint8_t*>(normal_accessor->buffer_view->buffer->data) +
-                                                           normal_accessor->buffer_view->offset + normal_idx * normal_accessor->stride);
+                    for (uint64_t normal_idx = 0; normal_idx < normal_accessor->count; normal_idx++) {
+                        const float* gltf_normal = reinterpret_cast<const float*>(static_cast<uint8_t*>(normal_accessor->buffer_view->buffer->data) +
+                                                                                  normal_accessor->offset + normal_accessor->buffer_view->offset +
+                                                                                  normal_idx * normal_accessor->stride);
 
-                        memcpy(vertex_arr[normal_idx].normal, gltf_normal, 3 * sizeof(float));
+                        memcpy(vertex_arr[normal_idx].normal, gltf_normal, normal_accessor->stride);
                     }
                 }
                 // get uv's
@@ -559,7 +577,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 
                     const cgltf_accessor* uv_accessor = gltf_attribute->data;
 
-                    uint32_t tex_coord_idx;
+                    uint64_t tex_coord_idx;
                     if (strcmp(gltf_attribute->name, "TEXCOORD_0") == 0) {
                         tex_coord_idx = 0;
                     } else if (strcmp(gltf_attribute->name, "TEXCOORD_1") == 0) {
@@ -568,11 +586,12 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                         abort_message("gltf loading does not handle more than 2 texture coordinates per vertex");
                     }
 
-                    for (uint32_t uv_idx = 0; uv_idx < uv_accessor->count; uv_idx++) {
-                        const float* gltf_uv = reinterpret_cast<const float*>(static_cast<uint8_t*>(uv_accessor->buffer_view->buffer->data) +
-                                                                              uv_accessor->buffer_view->offset + uv_idx * uv_accessor->stride);
+                    for (uint64_t uv_idx = 0; uv_idx < uv_accessor->count; uv_idx++) {
+                        const float* gltf_uv =
+                            reinterpret_cast<const float*>(static_cast<uint8_t*>(uv_accessor->buffer_view->buffer->data) + uv_accessor->offset +
+                                                           uv_accessor->buffer_view->offset + uv_idx * uv_accessor->stride);
 
-                        memcpy(vertex_arr[uv_idx].tex_coord[tex_coord_idx], gltf_uv, 2 * sizeof(float));
+                        memcpy(vertex_arr[uv_idx].tex_coord[tex_coord_idx], gltf_uv, uv_accessor->stride);
                     }
                 }
 
@@ -590,8 +609,8 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
             VmaAllocationCreateInfo allocation_ci{};
             allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-            vmaCreateBuffer(allocator, &vertex_buffer_ci, &allocation_ci, &primitive.vertex_buffer.buffer, &primitive.vertex_buffer.allocation,
-                            &primitive.vertex_buffer.allocation_info);
+            VK_CHECK(vmaCreateBuffer(allocator, &vertex_buffer_ci, &allocation_ci, &primitive.vertex_buffer.buffer,
+                                     &primitive.vertex_buffer.allocation, &primitive.vertex_buffer.allocation_info));
 
             vk_command_immediate_submit(device, command_pool, queue, [&](VkCommandBuffer cmd_buf) {
                 vkCmdCopyBuffer(cmd_buf, staging_buffer->buffer, primitive.vertex_buffer.buffer, 1, &buffer_copy);
@@ -673,7 +692,9 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         for (uint32_t j = 0; j < gltf_node->children_count; j++) {
             node.children.push_back(cgltf_data->nodes - gltf_node->children[j]);
         }
-        node.mesh = cgltf_data->meshes - gltf_node->mesh;
+        if (gltf_node->mesh) {
+            node.mesh = gltf_node->mesh - cgltf_data->meshes;
+        }
 
         nodes.push_back(node);
     }

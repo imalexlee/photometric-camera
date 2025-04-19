@@ -436,7 +436,11 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
 
     // add new draw objects
     for (const GltfNode& node : asset.nodes) {
-        const GltfMesh* gltf_mesh = &asset.meshes[node.mesh];
+        if (!node.mesh.has_value()) {
+            // only renderer nodes with meshes
+            continue;
+        }
+        const GltfMesh* gltf_mesh = &asset.meshes[node.mesh.value()];
         for (const GltfPrimitive& gltf_primitive : gltf_mesh->primitives) {
             DrawObject new_draw_object{};
             new_draw_object.transform = glm::make_mat4(node.world_transform);
@@ -599,23 +603,20 @@ void renderer_draw(Renderer* renderer) {
 
     const VkImageMemoryBarrier2 msaa_draw_image_memory_barrier =
         vk_lib::image_memory_barrier_2(renderer->msaa_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
-                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
-                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family);
 
     const VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT);
 
-    const VkImageMemoryBarrier2 depth_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
-        VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT);
+    const VkImageMemoryBarrier2 depth_image_memory_barrier =
+        vk_lib::image_memory_barrier_2(renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
+                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family);
 
     VkImage     swapchain_image      = swapchain_ctx->images[swapchain_image_index];
     VkImageView swapchain_image_view = swapchain_ctx->image_views[swapchain_image_index];
 
     const VkImageMemoryBarrier2 resolve_draw_image_memory_barrier =
         vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                       vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                                       vk_ctx->queue_family, vk_ctx->queue_family);
 
     std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, depth_image_memory_barrier};
 
@@ -736,6 +737,7 @@ Renderer renderer_create() {
 
     renderer_create_graphics_pipeline(&renderer, vk_ctx->device, swapchain_ctx->surface_format.format);
 
+    // renderer_add_gltf_asset(&renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
     renderer_add_gltf_asset(&renderer, "../assets/DamagedHelmet.glb");
 
     return renderer;
