@@ -554,6 +554,8 @@ static void renderer_update_scene_data(Renderer* renderer, uint32_t frame_index)
 
     scene_data.view = camera_view();
 
+    scene_data.eye_pos = global::camera.eye_pos;
+
     VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
 
     VkDescriptorBufferInfo buffer_info = vk_lib::descriptor_buffer_info(renderer->scene_data_buffers[frame_index].buffer);
@@ -641,18 +643,21 @@ void renderer_draw(Renderer* renderer) {
     const VkDependencyInfo draw_dependency_info = vk_lib::dependency_info_batch(draw_image_memory_barriers, {}, {});
     vkCmdPipelineBarrier2(command_buffer, &draw_dependency_info);
 
-    VkClearValue clear_value{};
-    clear_value.color = {0, 0, 0, 0};
+    VkClearValue color_clear_value{};
+    color_clear_value.color = {0.01, 0.01, 0.01, 0};
 
-    VkRenderingAttachmentInfo color_attachment_info = vk_lib::rendering_attachment_info(
-        renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
-        VK_ATTACHMENT_STORE_OP_DONT_CARE, &clear_value, VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo color_attachment_info =
+        vk_lib::rendering_attachment_info(renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                          VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE, &color_clear_value,
+                                          VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     std::array color_attachment_infos = {color_attachment_info};
 
+    VkClearValue depth_clear_value{};
+    depth_clear_value.color = {0, 0, 0, 0};
     VkRenderingAttachmentInfo depth_attachment_info =
         vk_lib::rendering_attachment_info(renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                          VK_ATTACHMENT_STORE_OP_DONT_CARE, &clear_value);
+                                          VK_ATTACHMENT_STORE_OP_DONT_CARE, &depth_clear_value);
 
     const VkRect2D           render_area    = vk_lib::rect_2d(swapchain_ctx->extent);
     const VkRenderingInfoKHR rendering_info = vk_lib::rendering_info(render_area, color_attachment_infos, &depth_attachment_info);
@@ -792,9 +797,11 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure.glb");
+    // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
+    renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
 
     active_renderer = renderer;
 }
