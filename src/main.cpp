@@ -5,7 +5,8 @@
 
 int main() {
 
-    Renderer renderer = renderer_create();
+    Renderer renderer{};
+    renderer_create(&renderer);
 
     while (!glfwWindowShouldClose(renderer.window.glfw_window)) {
         glfwPollEvents();

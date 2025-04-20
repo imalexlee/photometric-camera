@@ -7,13 +7,6 @@ void camera_key_callback(GLFWwindow* window, int key, int scancode, int action, 
         global::camera.velocity = {0, 0, 0};
         return;
     }
-
-    if (key == GLFW_KEY_ESCAPE) {
-        if (action == GLFW_PRESS) {
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
-            return;
-        }
-    }
     if (key == GLFW_KEY_W) {
         if (action == GLFW_PRESS) {
             if (mods == GLFW_MOD_SHIFT) {
@@ -68,8 +61,8 @@ void camera_cursor_callback(GLFWwindow* window, double x_pos, double y_pos) {
         return;
     }
 
-    double x_relative = global::camera.cursor_pos.x - x_pos;
-    double y_relative = global::camera.cursor_pos.y - y_pos;
+    float x_relative = global::camera.cursor_pos.x - x_pos;
+    float y_relative = global::camera.cursor_pos.y - y_pos;
 
     global::camera.yaw -= x_relative / 1000.f;
     global::camera.pitch += y_relative / 1000.f;
