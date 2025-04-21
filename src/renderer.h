@@ -97,6 +97,7 @@ struct Renderer {
     float frame_time{};
 
     glm::mat4 light_transform{};
+    glm::vec3 sun_dir{};
 };
 
 void renderer_create(Renderer* renderer);

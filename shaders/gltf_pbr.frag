@@ -108,29 +108,30 @@ void main() {
     float n_dot_l = max(dot(vert_normal, light_dir), 0.0);
     vec3 direct_lighting = material * lightColor * light_intensity * n_dot_l;
 
-    vec3 ambient_color = vec3(0.04) * light_intensity;
+    vec3 ambient_color = vec3(0.01) * light_intensity;
 
     vec3 ambient_contribution = albedo.rgb * ambient_color * occlusion;
 
-    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
-    vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
-    int radius = 2;
+    int radius = 7;
     float shadow = pow(radius * 2 + 1, 2);
-    for (int x = -radius; x <= radius; x++) {
-        for (int y = -radius; y <= radius; y++) {
-            vec2 offset = vec2(x, y) * texelSize;
-            if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0001){
-                //                out_color = vec4(1, 0, 0, 1);
-                //                return;
-                shadow -= 1;
+
+    if (n_dot_l > 0.0){
+        float texelSize = 1.0 / textureSize(shadow_map, 0).x;
+        vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                vec2 offset = vec2(x, y) * texelSize;
+                if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0001){
+                    shadow -= 1;
+                }
             }
         }
+        shadow /= pow(radius * 2 + 1, 2);
     }
-    shadow /= pow(radius * 2 + 1, 2);
-    out_color = vec4(shadow);
 
     vec3 final_color = (direct_lighting * shadow) + ambient_contribution + emissive;
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
+
 }

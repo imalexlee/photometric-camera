@@ -643,9 +643,9 @@ static void renderer_set_main_pass_scene_data(Renderer* renderer, uint32_t frame
 
     scene_data.eye_pos = global::camera.eye_pos;
 
-    scene_data.light_transform = renderer->light_transform;
+    scene_data.sun_dir = renderer->sun_dir;
 
-    scene_data.sun_dir = glm::normalize(glm::vec3(2, 8, 2));
+    scene_data.light_transform = renderer->light_transform;
 
     VK_CHECK(
         vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->main_scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
@@ -660,19 +660,17 @@ static void renderer_set_main_pass_scene_data(Renderer* renderer, uint32_t frame
 static void renderer_set_shadow_pass_scene_data(Renderer* renderer, uint32_t frame_index) {
 
     SceneData scene_data{};
-    float     bounds = 20.f;
-    scene_data.proj  = glm::ortho(-bounds, bounds, -bounds, bounds, 400.f, 0.001f);
-    // scene_data.proj[1][1] *= -1;
+    glm::vec3 light_pos = glm::vec3(2, 4.5, 1) * 4;
+    float     bounds    = 30;
+    scene_data.proj     = glm::ortho(-bounds, bounds, -bounds, bounds, 100.f, 0.0001f);
 
-    // scene_data.proj = glm::perspective(glm::radians(45.f), 1.f, 200.f, 0.01f);
-    // scene_data.proj[1][1] *= -1;
-
-    // todo: don't hardcode light position
-    glm::vec3 light_pos = glm::vec3(2, 8, 2);
-    scene_data.eye_pos  = light_pos;
-    scene_data.view     = glm::lookAt(light_pos, glm::vec3(0), glm::vec3(0, 1, 0));
+    scene_data.eye_pos = light_pos;
+    scene_data.view    = glm::lookAt(light_pos, glm::vec3(0), glm::vec3(0, 1, 0));
 
     renderer->light_transform = scene_data.proj * scene_data.view;
+    scene_data.sun_dir        = glm::normalize(light_pos);
+
+    renderer->sun_dir = scene_data.sun_dir;
 
     VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->shadow_scene_data_buffers[frame_index].allocation, 0,
                                        sizeof(SceneData)));
