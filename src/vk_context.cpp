@@ -74,14 +74,15 @@ VkDevice create_logical_device(VkPhysicalDevice physical_device, uint32_t queue_
     vk_1_3_features.dynamicRendering                 = VK_TRUE;
     vk_1_3_features.synchronization2                 = VK_TRUE;
 
-    VkPhysicalDeviceVulkan12Features vk_1_2_features          = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-    vk_1_2_features.descriptorBindingVariableDescriptorCount  = VK_TRUE;
-    vk_1_2_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-    vk_1_2_features.runtimeDescriptorArray                    = VK_TRUE;
-    vk_1_2_features.bufferDeviceAddress                       = VK_TRUE;
-    vk_1_2_features.descriptorIndexing                        = VK_TRUE;
-    vk_1_2_features.scalarBlockLayout                         = VK_TRUE;
-    vk_1_2_features.pNext                                     = &vk_1_3_features;
+    VkPhysicalDeviceVulkan12Features vk_1_2_features              = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    vk_1_2_features.descriptorBindingVariableDescriptorCount      = VK_TRUE;
+    vk_1_2_features.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+    vk_1_2_features.shaderSampledImageArrayNonUniformIndexing     = VK_TRUE;
+    vk_1_2_features.runtimeDescriptorArray                        = VK_TRUE;
+    vk_1_2_features.bufferDeviceAddress                           = VK_TRUE;
+    vk_1_2_features.descriptorIndexing                            = VK_TRUE;
+    vk_1_2_features.scalarBlockLayout                             = VK_TRUE;
+    vk_1_2_features.pNext                                         = &vk_1_3_features;
 
     VkPhysicalDeviceFeatures2 physical_device_features_2  = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
     physical_device_features_2.features.samplerAnisotropy = VK_TRUE;

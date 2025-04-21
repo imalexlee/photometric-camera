@@ -9,12 +9,12 @@ static Renderer* active_renderer = nullptr;
 static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
                                         std::function<void(VkCommandBuffer command_buffer)>&& function) {
 
-    VkFence fence{};
+    VkFence                 fence{};
     const VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
     VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &fence));
 
     const VkCommandBufferAllocateInfo command_buffer_ai = vk_lib::command_buffer_allocate_info(command_pool);
-    VkCommandBuffer cmd_buf;
+    VkCommandBuffer                   cmd_buf;
     VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &cmd_buf));
 
     const VkCommandBufferBeginInfo command_buffer_bi = vk_lib::command_buffer_begin_info();
@@ -25,7 +25,7 @@ static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_p
     VK_CHECK(vkEndCommandBuffer(cmd_buf));
 
     const VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(cmd_buf);
-    const VkSubmitInfo2 submit_info_2                          = vk_lib::submit_info_2(&command_buffer_submit_info);
+    const VkSubmitInfo2             submit_info_2              = vk_lib::submit_info_2(&command_buffer_submit_info);
 
     VK_CHECK(vkQueueSubmit2(queue, 1, &submit_info_2, fence));
 
@@ -41,11 +41,11 @@ static VkShaderModule load_shader(VkDevice device, const std::filesystem::path& 
     if (!file.is_open()) {
         abort_message("Failed to find shader");
     }
-    const size_t file_size = file.tellg();
+    const size_t      file_size = file.tellg();
     std::vector<char> shader_data(file_size);
     file.seekg(0);
     file.read(shader_data.data(), static_cast<uint32_t>(file_size));
-    VkShaderModule shader_module;
+    VkShaderModule           shader_module;
     VkShaderModuleCreateInfo shader_module_ci = vk_lib::shader_module_create_info(reinterpret_cast<const uint32_t*>(shader_data.data()), file_size);
     VK_CHECK(vkCreateShaderModule(device, &shader_module_ci, nullptr, &shader_module));
     return shader_module;
@@ -55,42 +55,42 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
 
     VkDevice device = renderer->vk_context.device;
 
-    std::array set_layouts                        = {renderer->scene_descriptor_set_layout, renderer->asset_descriptor_set_layout};
-    VkPushConstantRange push_constant_range       = vk_lib::push_constant_range(VK_SHADER_STAGE_ALL, sizeof(PushConstants));
-    std::array push_constant_ranges               = {push_constant_range};
-    VkPipelineLayoutCreateInfo layout_create_info = vk_lib::pipeline_layout_create_info(set_layouts, push_constant_ranges);
-    VkPipelineLayout pipeline_layout;
-    vkCreatePipelineLayout(device, &layout_create_info, nullptr, &pipeline_layout);
+    std::array                 set_layouts          = {renderer->scene_descriptor_set_layout, renderer->asset_descriptor_set_layout};
+    VkPushConstantRange        push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_ALL, sizeof(PushConstants));
+    std::array                 push_constant_ranges = {push_constant_range};
+    VkPipelineLayoutCreateInfo layout_create_info   = vk_lib::pipeline_layout_create_info(set_layouts, push_constant_ranges);
+    VkPipelineLayout           pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(device, &layout_create_info, nullptr, &pipeline_layout));
 
-    std::array color_attachment_formats                          = {color_attachment_format};
+    std::array                             color_attachment_formats = {color_attachment_format};
     const VkPipelineRenderingCreateInfoKHR rendering_create_info =
         vk_lib::pipeline_rendering_create_info(color_attachment_formats, VK_FORMAT_D32_SFLOAT);
 
-    VkShaderModule vert_shader                              = load_shader(device, "../shaders/indexed_draw.vert.spv");
-    VkShaderModule frag_shader                              = load_shader(device, "../shaders/gltf_pbr.frag.spv");
-    VkPipelineShaderStageCreateInfo vert_shader_stage       = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vert_shader);
-    VkPipelineShaderStageCreateInfo frag_shader_stage       = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader);
-    std::array shader_stages                                = {vert_shader_stage, frag_shader_stage};
+    VkShaderModule                       vert_shader        = load_shader(device, "../shaders/indexed_draw.vert.spv");
+    VkShaderModule                       frag_shader        = load_shader(device, "../shaders/gltf_pbr.frag.spv");
+    VkPipelineShaderStageCreateInfo      vert_shader_stage  = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vert_shader);
+    VkPipelineShaderStageCreateInfo      frag_shader_stage  = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader);
+    std::array                           shader_stages      = {vert_shader_stage, frag_shader_stage};
     VkPipelineVertexInputStateCreateInfo vertex_input_state = vk_lib::pipeline_vertex_input_state_create_info();
     // todo: make input assembly state dynamic later on
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state =
         vk_lib::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    VkPipelineViewportStateCreateInfo viewport_state           = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
+    VkPipelineViewportStateCreateInfo      viewport_state = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
     VkPipelineRasterizationStateCreateInfo rasterization_state =
-        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-    VkPipelineMultisampleStateCreateInfo multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
-    VkPipelineColorBlendAttachmentState opaque_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
-    std::array opaque_color_blends = {opaque_color_blend_attachment_state};
-    VkPipelineColorBlendStateCreateInfo opaque_color_blend_state = vk_lib::pipeline_color_blend_state_create_info(opaque_color_blends);
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_CLOCKWISE, VK_CULL_MODE_NONE, true, 0, -5);
+    VkPipelineMultisampleStateCreateInfo  multisample_state                   = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
+    VkPipelineColorBlendAttachmentState   opaque_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
+    std::array                            opaque_color_blends                 = {opaque_color_blend_attachment_state};
+    VkPipelineColorBlendStateCreateInfo   opaque_color_blend_state            = vk_lib::pipeline_color_blend_state_create_info(opaque_color_blends);
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state = vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER);
-    std::array dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT};
-    VkPipelineDynamicStateCreateInfo dynamic_state = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
-    VkGraphicsPipelineCreateInfo opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
+    std::array                            dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT};
+    VkPipelineDynamicStateCreateInfo      dynamic_state       = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
+    VkGraphicsPipelineCreateInfo          opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         pipeline_layout, nullptr, shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state, &rasterization_state,
         &multisample_state, &opaque_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0, nullptr, 0, &rendering_create_info);
 
     VkPipeline opaque_pipeline;
-    vkCreateGraphicsPipelines(device, nullptr, 1, &opaque_graphics_pipeline_ci, nullptr, &opaque_pipeline);
+    VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &opaque_graphics_pipeline_ci, nullptr, &opaque_pipeline));
 
     GraphicsPipeline opaque_graphics_pipeline{};
     opaque_graphics_pipeline.pipeline        = opaque_pipeline;
@@ -100,9 +100,8 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
 
     renderer->opaque_graphics_pipeline = opaque_graphics_pipeline;
 
-    VkPipelineColorBlendAttachmentState transparent_color_blend_attachment_state =
-        vk_lib::pipeline_color_blend_attachment_state(true, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
-    std::array transparent_color_blends                               = {transparent_color_blend_attachment_state};
+    VkPipelineColorBlendAttachmentState transparent_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state(true);
+    std::array                          transparent_color_blends                 = {transparent_color_blend_attachment_state};
     VkPipelineColorBlendStateCreateInfo transparent_color_blend_state = vk_lib::pipeline_color_blend_state_create_info(transparent_color_blends);
 
     VkGraphicsPipelineCreateInfo transparent_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
@@ -110,7 +109,7 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
         &multisample_state, &transparent_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0, nullptr, 0, &rendering_create_info);
 
     VkPipeline transparent_pipeline;
-    vkCreateGraphicsPipelines(device, nullptr, 1, &transparent_graphics_pipeline_ci, nullptr, &transparent_pipeline);
+    VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &transparent_graphics_pipeline_ci, nullptr, &transparent_pipeline));
 
     GraphicsPipeline transparent_graphics_pipeline{};
     transparent_graphics_pipeline.pipeline        = transparent_pipeline;
@@ -121,36 +120,37 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     renderer->transparent_graphics_pipeline = transparent_graphics_pipeline;
 
     // create offscreen shadow map pipeline
-    VkShaderModule shadow_vert_shader                       = load_shader(device, "../shaders/shadow_map_gen.vert.spv");
-    VkPipelineShaderStageCreateInfo shadow_map_shader_stage = vk_lib::pipeline_shader_stage_create_info(
-        VK_SHADER_STAGE_VERTEX_BIT, shadow_vert_shader);
+    VkShaderModule                  shadow_vert_shader = load_shader(device, "../shaders/shadow_map_gen.vert.spv");
+    VkPipelineShaderStageCreateInfo shadow_map_shader_stage =
+        vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, shadow_vert_shader);
     std::array shadow_map_shader_stages = {shadow_map_shader_stage};
 
-    std::array shadow_map_set_layouts                  = {renderer->scene_descriptor_set_layout};
-    VkPushConstantRange shadow_map_push_constant_range = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstants));
-    std::array shadow_map_push_constant_ranges         = {shadow_map_push_constant_range};
+    std::array          shadow_map_set_layouts          = {renderer->shadow_descriptor_set_layout};
+    VkPushConstantRange shadow_map_push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstants));
+    std::array          shadow_map_push_constant_ranges = {shadow_map_push_constant_range};
 
-    VkPipelineLayoutCreateInfo shadow_map_layout_create_info = vk_lib::pipeline_layout_create_info(
-        shadow_map_set_layouts, shadow_map_push_constant_ranges);
+    VkPipelineLayoutCreateInfo shadow_map_layout_create_info =
+        vk_lib::pipeline_layout_create_info(shadow_map_set_layouts, shadow_map_push_constant_ranges);
 
     VkPipelineLayout shadow_map_pipeline_layout;
-    vkCreatePipelineLayout(device, &shadow_map_layout_create_info, nullptr, &shadow_map_pipeline_layout);
+    VK_CHECK(vkCreatePipelineLayout(device, &shadow_map_layout_create_info, nullptr, &shadow_map_pipeline_layout));
 
     VkPipelineMultisampleStateCreateInfo shadow_map_multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_1_BIT);
-    VkPipelineColorBlendStateCreateInfo shadow_map_color_blend_state  = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
+    VkPipelineColorBlendStateCreateInfo  shadow_map_color_blend_state = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
+    VkPipelineRenderingCreateInfoKHR     shadow_map_rendering_ci      = vk_lib::pipeline_rendering_create_info({}, VK_FORMAT_D32_SFLOAT);
 
     VkGraphicsPipelineCreateInfo shadow_map_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         shadow_map_pipeline_layout, nullptr, shadow_map_shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state,
         &rasterization_state, &shadow_map_multisample_state, &shadow_map_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0,
-        nullptr, 0, &rendering_create_info);
+        nullptr, 0, &shadow_map_rendering_ci);
 
     VkPipeline shadow_map_pipeline;
-    vkCreateGraphicsPipelines(device, nullptr, 1, &shadow_map_graphics_pipeline_ci, nullptr, &shadow_map_pipeline);
+    VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &shadow_map_graphics_pipeline_ci, nullptr, &shadow_map_pipeline));
 
     GraphicsPipeline shadow_map_graphics_pipeline{};
-    opaque_graphics_pipeline.pipeline        = shadow_map_pipeline;
-    opaque_graphics_pipeline.pipeline_layout = shadow_map_pipeline_layout;
-    opaque_graphics_pipeline.vert_shader     = shadow_vert_shader;
+    shadow_map_graphics_pipeline.pipeline        = shadow_map_pipeline;
+    shadow_map_graphics_pipeline.pipeline_layout = shadow_map_pipeline_layout;
+    shadow_map_graphics_pipeline.vert_shader     = shadow_vert_shader;
 
     renderer->shadow_map_graphics_pipeline = shadow_map_graphics_pipeline;
 }
@@ -200,7 +200,7 @@ static VmaAllocator allocator_create(const VkContext* vk_context) {
 }
 
 static void create_render_resources(Renderer* renderer) {
-    VkContext* vk_ctx                     = &renderer->vk_context;
+    VkContext*              vk_ctx        = &renderer->vk_context;
     const SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
 
     VkExtent3D image_extent = vk_lib::extent_3d(swapchain_ctx->extent.width, swapchain_ctx->extent.height);
@@ -214,7 +214,7 @@ static void create_render_resources(Renderer* renderer) {
     allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
     VK_CHECK(vmaCreateImage(renderer->allocator, &msaa_image_ci, &allocation_ci, &renderer->msaa_color_image.image,
-        &renderer->msaa_color_image.allocation, &renderer->msaa_color_image.allocation_info));
+                            &renderer->msaa_color_image.allocation, &renderer->msaa_color_image.allocation_info));
 
     renderer->msaa_color_image.image_format = swapchain_ctx->surface_format.format;
 
@@ -229,7 +229,7 @@ static void create_render_resources(Renderer* renderer) {
         vk_lib::image_create_info(VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, image_extent, 1, 1, VK_SAMPLE_COUNT_4_BIT);
 
     VK_CHECK(vmaCreateImage(renderer->allocator, &depth_image_ci, &allocation_ci, &renderer->depth_image.image, &renderer->depth_image.allocation,
-        &renderer->depth_image.allocation_info));
+                            &renderer->depth_image.allocation_info));
 
     renderer->depth_image.image_format = VK_FORMAT_D32_SFLOAT;
 
@@ -239,25 +239,35 @@ static void create_render_resources(Renderer* renderer) {
         vk_lib::image_view_create_info(VK_FORMAT_D32_SFLOAT, renderer->depth_image.image, &depth_subresource_range);
 
     VK_CHECK(vkCreateImageView(vk_ctx->device, &depth_image_view_ci, nullptr, &renderer->depth_image.image_view));
+}
 
-    // create shadow map image
-    renderer->shadow_map_extent = vk_lib::extent_3d(1024, 1024);
+static void renderer_create_shadow_map(Renderer* renderer) {
 
-    VkImageCreateInfo shadow_map_image_ci =
-        vk_lib::image_create_info(VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                  renderer->shadow_map_extent);
+    VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT);
 
-    VK_CHECK(
-        vmaCreateImage(renderer->allocator, &shadow_map_image_ci, &allocation_ci, &renderer->shadow_map_image.image, &renderer->shadow_map_image.
-            allocation,
-            &renderer->shadow_map_image.allocation_info));
+    VmaAllocationCreateInfo allocation_ci{};
+    allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    renderer->shadow_map_extent = vk_lib::extent_3d(2048, 2048);
+
+    VkImageCreateInfo shadow_map_image_ci = vk_lib::image_create_info(
+        VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, renderer->shadow_map_extent);
+
+    VK_CHECK(vmaCreateImage(renderer->allocator, &shadow_map_image_ci, &allocation_ci, &renderer->shadow_map_image.image,
+                            &renderer->shadow_map_image.allocation, &renderer->shadow_map_image.allocation_info));
 
     renderer->shadow_map_image.image_format = VK_FORMAT_D32_SFLOAT;
 
     VkImageViewCreateInfo shadow_map_image_view_ci =
         vk_lib::image_view_create_info(VK_FORMAT_D32_SFLOAT, renderer->shadow_map_image.image, &depth_subresource_range);
 
-    VK_CHECK(vkCreateImageView(vk_ctx->device, &shadow_map_image_view_ci, nullptr, &renderer->shadow_map_image.image_view));
+    VK_CHECK(vkCreateImageView(renderer->vk_context.device, &shadow_map_image_view_ci, nullptr, &renderer->shadow_map_image.image_view));
+
+    VkDescriptorImageInfo shadow_map_desc_info =
+        vk_lib::descriptor_image_info(renderer->shadow_map_image.image_view, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, renderer->default_sampler);
+    VkWriteDescriptorSet shadow_map_tex_write =
+        vk_lib::write_descriptor_set(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, renderer->asset_descriptor_set, &shadow_map_desc_info);
+    vkUpdateDescriptorSets(renderer->vk_context.device, 1, &shadow_map_tex_write, 0, nullptr);
 }
 
 static void destroy_render_resources(Renderer* renderer) {
@@ -266,28 +276,25 @@ static void destroy_render_resources(Renderer* renderer) {
 
     vmaDestroyImage(renderer->allocator, renderer->depth_image.image, renderer->depth_image.allocation);
     vkDestroyImageView(renderer->vk_context.device, renderer->depth_image.image_view, nullptr);
-
-    vmaDestroyImage(renderer->allocator, renderer->shadow_map_image.image, renderer->shadow_map_image.allocation);
-    vkDestroyImageView(renderer->vk_context.device, renderer->shadow_map_image.image_view, nullptr);
 }
 
 static void renderer_add_materials(Renderer* renderer, std::span<Material> materials) {
-    uint64_t new_material_alloc_size   = renderer->material_buffer.allocation_info.size + materials.size() * sizeof(Material);
-    VkBufferCreateInfo material_buf_ci = vk_lib::buffer_create_info(
+    uint64_t           new_material_alloc_size = renderer->material_buffer.allocation_info.size + materials.size() * sizeof(Material);
+    VkBufferCreateInfo material_buf_ci         = vk_lib::buffer_create_info(
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, new_material_alloc_size);
     VmaAllocationCreateInfo material_buf_allocation_ci{};
     material_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     AllocatedBuffer new_material_buffer{};
     VK_CHECK(vmaCreateBuffer(renderer->allocator, &material_buf_ci, &material_buf_allocation_ci, &new_material_buffer.buffer,
-        &new_material_buffer.allocation, &new_material_buffer.allocation_info));
+                             &new_material_buffer.allocation, &new_material_buffer.allocation_info));
 
-    VkBufferCreateInfo staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, materials.size_bytes());
+    VkBufferCreateInfo      staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, materials.size_bytes());
     VmaAllocationCreateInfo staging_buf_allocation_ci{};
     staging_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     staging_buf_allocation_ci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     AllocatedBuffer staging_buffer;
     VK_CHECK(vmaCreateBuffer(renderer->allocator, &staging_buf_ci, &staging_buf_allocation_ci, &staging_buffer.buffer, &staging_buffer.allocation,
-        &staging_buffer.allocation_info));
+                             &staging_buffer.allocation_info));
 
     memcpy(staging_buffer.allocation_info.pMappedData, materials.data(), materials.size_bytes());
 
@@ -315,8 +322,8 @@ static void renderer_add_materials(Renderer* renderer, std::span<Material> mater
 
     // update the descriptor for the materials
     VkDescriptorBufferInfo descriptor_buffer_info = vk_lib::descriptor_buffer_info(renderer->material_buffer.buffer);
-    VkWriteDescriptorSet descriptor_write         =
-        vk_lib::write_descriptor_set(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, renderer->asset_descriptor_set, nullptr, &descriptor_buffer_info);
+    VkWriteDescriptorSet   descriptor_write =
+        vk_lib::write_descriptor_set(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, renderer->asset_descriptor_set, nullptr, &descriptor_buffer_info);
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &descriptor_write, 0, nullptr);
 }
 
@@ -325,13 +332,13 @@ static void renderer_add_textures(Renderer* renderer, std::span<Texture> texture
     std::vector<VkDescriptorImageInfo> descriptor_image_infos;
     descriptor_image_infos.reserve(textures.size());
     for (const Texture& texture : textures) {
-        VkSampler sampler                = texture.sampler == nullptr ? renderer->default_sampler : texture.sampler;
+        VkSampler             sampler    = texture.sampler == nullptr ? renderer->default_sampler : texture.sampler;
         VkDescriptorImageInfo image_info = vk_lib::descriptor_image_info(texture.image.image_view, texture.image.layout, sampler);
         descriptor_image_infos.push_back(image_info);
     }
 
     VkWriteDescriptorSet write_descriptor_set =
-        vk_lib::write_descriptor_set(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, renderer->asset_descriptor_set, descriptor_image_infos.data(),
+        vk_lib::write_descriptor_set(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, renderer->asset_descriptor_set, descriptor_image_infos.data(),
                                      nullptr, nullptr, renderer->texture_count, descriptor_image_infos.size());
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &write_descriptor_set, 0, nullptr);
     renderer->texture_count += textures.size();
@@ -342,42 +349,53 @@ static void renderer_init_shader_data(Renderer* renderer) {
 
     constexpr uint32_t variable_texture_count = 5000;
 
-    VkDescriptorPoolSize scene_data_pool_size     = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
-    VkDescriptorPoolSize materials_pool_size      = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
-    VkDescriptorPoolSize textures_pool_size       = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
-    std::array pool_sizes                         = {scene_data_pool_size, materials_pool_size, textures_pool_size};
-    VkDescriptorPoolCreateInfo descriptor_pool_ci = vk_lib::descriptor_pool_create_info(
-        4, pool_sizes, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+    VkDescriptorPoolSize       shadow_scene_data_pool_size   = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
+    VkDescriptorPoolSize       scene_data_pool_size          = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
+    VkDescriptorPoolSize       shadow_map_textures_pool_size = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+    VkDescriptorPoolSize       materials_pool_size           = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+    VkDescriptorPoolSize       textures_pool_size = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
+    std::array                 pool_sizes = {shadow_scene_data_pool_size, scene_data_pool_size, shadow_map_textures_pool_size, materials_pool_size,
+                                             textures_pool_size};
+    VkDescriptorPoolCreateInfo descriptor_pool_ci =
+        vk_lib::descriptor_pool_create_info(7, pool_sizes, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
 
     VK_CHECK(vkCreateDescriptorPool(vk_ctx->device, &descriptor_pool_ci, nullptr, &renderer->descriptor_pool));
 
-    // scene descriptor layout
-    VkDescriptorSetLayoutBinding scene_data_layout_binding = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    std::array scene_layout_bindings                       = {scene_data_layout_binding};
-    VkDescriptorBindingFlags scene_binding_flags           = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-    VkDescriptorSetLayoutBindingFlagsCreateInfo scene_binding_flags_ci{};
-    scene_binding_flags_ci.sType                                   = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    scene_binding_flags_ci.bindingCount                            = 1;
-    scene_binding_flags_ci.pBindingFlags                           = &scene_binding_flags;
-    scene_binding_flags_ci.pNext                                   = nullptr;
-    VkDescriptorSetLayoutCreateInfo scene_descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(
-        scene_layout_bindings, VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT, &scene_binding_flags_ci);
+    // shadow scene descriptor layout
+    VkDescriptorSetLayoutBinding    shadow_data_layout_binding      = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    std::array                      shadow_layout_bindings          = {shadow_data_layout_binding};
+    VkDescriptorSetLayoutCreateInfo shadow_descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(shadow_layout_bindings);
+    vkCreateDescriptorSetLayout(vk_ctx->device, &shadow_descriptor_set_layout_ci, nullptr, &renderer->shadow_descriptor_set_layout);
+
+    // main scene descriptor layout
+    VkDescriptorSetLayoutBinding    scene_data_layout_binding      = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    std::array                      scene_layout_bindings          = {scene_data_layout_binding};
+    VkDescriptorSetLayoutCreateInfo scene_descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(scene_layout_bindings);
     vkCreateDescriptorSetLayout(vk_ctx->device, &scene_descriptor_set_layout_ci, nullptr, &renderer->scene_descriptor_set_layout);
 
     // assets descriptor layout
-    VkDescriptorSetLayoutBinding materials_layout_binding = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    VkDescriptorSetLayoutBinding textures_layout_binding  =
-        vk_lib::descriptor_set_layout_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
-    std::array asset_layout_bindings                            = {materials_layout_binding, textures_layout_binding};
-    std::array<VkDescriptorBindingFlags, 2> asset_binding_flags = {0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
+    VkDescriptorSetLayoutBinding shadow_map_layout_binding = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    VkDescriptorSetLayoutBinding materials_layout_binding  = vk_lib::descriptor_set_layout_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    VkDescriptorSetLayoutBinding textures_layout_binding =
+        vk_lib::descriptor_set_layout_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
+    std::array                              asset_layout_bindings = {shadow_map_layout_binding, materials_layout_binding, textures_layout_binding};
+    std::array<VkDescriptorBindingFlags, 3> asset_binding_flags   = {0, 0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
     VkDescriptorSetLayoutBindingFlagsCreateInfo asset_binding_flags_ci{};
-    asset_binding_flags_ci.sType                             = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    asset_binding_flags_ci.bindingCount                      = asset_binding_flags.size();
-    asset_binding_flags_ci.pBindingFlags                     = asset_binding_flags.data();
-    asset_binding_flags_ci.pNext                             = nullptr;
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(
-        asset_layout_bindings, 0, &asset_binding_flags_ci);
+    asset_binding_flags_ci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    asset_binding_flags_ci.bindingCount  = asset_binding_flags.size();
+    asset_binding_flags_ci.pBindingFlags = asset_binding_flags.data();
+    asset_binding_flags_ci.pNext         = nullptr;
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci =
+        vk_lib::descriptor_set_layout_create_info(asset_layout_bindings, 0, &asset_binding_flags_ci);
     vkCreateDescriptorSetLayout(vk_ctx->device, &descriptor_set_layout_ci, nullptr, &renderer->asset_descriptor_set_layout);
+
+    // shadow descriptors allocation
+    std::array shadow_scene_set_layouts = {renderer->shadow_descriptor_set_layout, renderer->shadow_descriptor_set_layout,
+                                           renderer->shadow_descriptor_set_layout};
+    renderer->shadow_descriptor_sets.resize(renderer->frames.size());
+    VkDescriptorSetAllocateInfo shadow_scene_desc_set_ai =
+        vk_lib::descriptor_set_allocate_info(shadow_scene_set_layouts.data(), renderer->descriptor_pool, renderer->frames.size());
+    VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &shadow_scene_desc_set_ai, renderer->shadow_descriptor_sets.data()));
 
     // scene descriptors allocation
     std::array scene_set_layouts = {renderer->scene_descriptor_set_layout, renderer->scene_descriptor_set_layout,
@@ -389,10 +407,11 @@ static void renderer_init_shader_data(Renderer* renderer) {
 
     // asset descriptor allocation
     VkDescriptorSetVariableDescriptorCountAllocateInfoEXT variable_info{};
-    variable_info.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
-    variable_info.descriptorSetCount              = 1;
-    variable_info.pDescriptorCounts               = &variable_texture_count;
-    variable_info.descriptorSetCount              = 1;
+    variable_info.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
+    variable_info.descriptorSetCount = 1;
+    variable_info.pDescriptorCounts  = &variable_texture_count;
+    variable_info.descriptorSetCount = 1;
+
     VkDescriptorSetAllocateInfo asset_desc_set_ai =
         vk_lib::descriptor_set_allocate_info(&renderer->asset_descriptor_set_layout, renderer->descriptor_pool, 1, &variable_info);
     VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &asset_desc_set_ai, &renderer->asset_descriptor_set));
@@ -418,13 +437,13 @@ static void renderer_init_shader_data(Renderer* renderer) {
     VK_CHECK(vkCreateSampler(renderer->vk_context.device, &default_sampler_ci, nullptr, &renderer->default_sampler));
 
     // create image with one pixel?
-    VkBufferCreateInfo staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 4);
+    VkBufferCreateInfo      staging_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 4);
     VmaAllocationCreateInfo staging_buf_allocation_ci{};
     staging_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     staging_buf_allocation_ci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     AllocatedBuffer staging_buffer;
     VK_CHECK(vmaCreateBuffer(renderer->allocator, &staging_buf_ci, &staging_buf_allocation_ci, &staging_buffer.buffer, &staging_buffer.allocation,
-        &staging_buffer.allocation_info));
+                             &staging_buffer.allocation_info));
 
     uint8_t image_data[4] = {255, 255, 255, 255};
     memcpy(staging_buffer.allocation_info.pMappedData, image_data, 4);
@@ -452,7 +471,7 @@ static void renderer_init_shader_data(Renderer* renderer) {
             vkCmdPipelineBarrier2(cmd_buf, &pre_transfer_dependency_info);
 
             VkImageSubresourceLayers image_subresource_layers = vk_lib::image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT);
-            VkBufferImageCopy copy_region                     = vk_lib::buffer_image_copy(image_subresource_layers, vk_lib::extent_3d(1, 1));
+            VkBufferImageCopy        copy_region              = vk_lib::buffer_image_copy(image_subresource_layers, vk_lib::extent_3d(1, 1));
             vkCmdCopyBufferToImage(cmd_buf, staging_buffer.buffer, renderer->default_texture_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                                    &copy_region);
 
@@ -474,16 +493,22 @@ static void renderer_init_shader_data(Renderer* renderer) {
     renderer_add_textures(renderer, default_textures);
 
     // scene data buffers
-    VkBufferCreateInfo scene_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(SceneData));
+    VkBufferCreateInfo      scene_buf_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(SceneData));
     VmaAllocationCreateInfo scene_buf_allocation_ci{};
     scene_buf_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO;
     scene_buf_allocation_ci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     for (uint32_t i = 0; i < renderer->frames.size(); i++) {
-        AllocatedBuffer scene_buffer;
-        VK_CHECK(vmaCreateBuffer(renderer->allocator, &scene_buf_ci, &scene_buf_allocation_ci, &scene_buffer.buffer, &scene_buffer.allocation,
-            &scene_buffer.allocation_info));
+        AllocatedBuffer main_scene_buffer;
+        VK_CHECK(vmaCreateBuffer(renderer->allocator, &scene_buf_ci, &scene_buf_allocation_ci, &main_scene_buffer.buffer,
+                                 &main_scene_buffer.allocation, &main_scene_buffer.allocation_info));
 
-        renderer->scene_data_buffers.push_back(scene_buffer);
+        renderer->main_scene_data_buffers.push_back(main_scene_buffer);
+
+        AllocatedBuffer shadow_scene_buffer;
+        VK_CHECK(vmaCreateBuffer(renderer->allocator, &scene_buf_ci, &scene_buf_allocation_ci, &shadow_scene_buffer.buffer,
+                                 &shadow_scene_buffer.allocation, &shadow_scene_buffer.allocation_info));
+
+        renderer->shadow_scene_data_buffers.push_back(shadow_scene_buffer);
     }
 
     vmaDestroyBuffer(renderer->allocator, staging_buffer.buffer, staging_buffer.allocation);
@@ -618,57 +643,67 @@ static void renderer_set_main_pass_scene_data(Renderer* renderer, uint32_t frame
 
     scene_data.eye_pos = global::camera.eye_pos;
 
-    VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
+    scene_data.light_transform = renderer->light_transform;
 
-    VkDescriptorBufferInfo buffer_info = vk_lib::descriptor_buffer_info(renderer->scene_data_buffers[frame_index].buffer);
+    scene_data.sun_dir = glm::normalize(glm::vec3(2, 8, 2));
+
+    VK_CHECK(
+        vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->main_scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
+
+    VkDescriptorBufferInfo buffer_info = vk_lib::descriptor_buffer_info(renderer->main_scene_data_buffers[frame_index].buffer);
 
     VkWriteDescriptorSet descriptor_write =
         vk_lib::write_descriptor_set(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, renderer->scene_descriptor_sets[frame_index], nullptr, &buffer_info);
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &descriptor_write, 0, nullptr);
 }
-
 
 static void renderer_set_shadow_pass_scene_data(Renderer* renderer, uint32_t frame_index) {
 
     SceneData scene_data{};
-    scene_data.proj = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 100.f, 0.1f);
-    // maybe?
+    float     bounds = 20.f;
+    scene_data.proj  = glm::ortho(-bounds, bounds, -bounds, bounds, 400.f, 0.001f);
     // scene_data.proj[1][1] *= -1;
 
-    //todo: don't hardcode light position
-    glm::vec3 light_pos = glm::vec3(10);
+    // scene_data.proj = glm::perspective(glm::radians(45.f), 1.f, 200.f, 0.01f);
+    // scene_data.proj[1][1] *= -1;
+
+    // todo: don't hardcode light position
+    glm::vec3 light_pos = glm::vec3(2, 8, 2);
     scene_data.eye_pos  = light_pos;
     scene_data.view     = glm::lookAt(light_pos, glm::vec3(0), glm::vec3(0, 1, 0));
 
-    VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->scene_data_buffers[frame_index].allocation, 0, sizeof(SceneData)));
+    renderer->light_transform = scene_data.proj * scene_data.view;
 
-    VkDescriptorBufferInfo buffer_info = vk_lib::descriptor_buffer_info(renderer->scene_data_buffers[frame_index].buffer);
+    VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->shadow_scene_data_buffers[frame_index].allocation, 0,
+                                       sizeof(SceneData)));
+
+    VkDescriptorBufferInfo buffer_info = vk_lib::descriptor_buffer_info(renderer->shadow_scene_data_buffers[frame_index].buffer);
 
     VkWriteDescriptorSet descriptor_write =
-        vk_lib::write_descriptor_set(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, renderer->scene_descriptor_sets[frame_index], nullptr, &buffer_info);
+        vk_lib::write_descriptor_set(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, renderer->shadow_descriptor_sets[frame_index], nullptr, &buffer_info);
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &descriptor_write, 0, nullptr);
 }
 
 void renderer_draw(Renderer* renderer) {
-    static auto last_frame_time = std::chrono::high_resolution_clock::now();
-    auto current_frame_time     = std::chrono::high_resolution_clock::now();
-    auto duration               = std::chrono::duration<float>(current_frame_time - last_frame_time);
-    float raw_frame_time        = duration.count();
+    static auto last_frame_time    = std::chrono::high_resolution_clock::now();
+    auto        current_frame_time = std::chrono::high_resolution_clock::now();
+    auto        duration           = std::chrono::duration<float>(current_frame_time - last_frame_time);
+    float       raw_frame_time     = duration.count();
 
-    constexpr float max_frame_time = 0.1f; // 100ms (10 FPS)
-    float clamped_frame_time       = std::min(raw_frame_time, max_frame_time);
+    constexpr float max_frame_time     = 0.1f; // 100ms (10 FPS)
+    float           clamped_frame_time = std::min(raw_frame_time, max_frame_time);
 
-    constexpr float smoothing_factor = 0.5f;
-    static float smoothed_frame_time = 0.016f;
-    smoothed_frame_time              = smoothing_factor * clamped_frame_time + (1.0f - smoothing_factor) * smoothed_frame_time;
+    constexpr float smoothing_factor    = 0.5f;
+    static float    smoothed_frame_time = 0.016f;
+    smoothed_frame_time                 = smoothing_factor * clamped_frame_time + (1.0f - smoothing_factor) * smoothed_frame_time;
 
     renderer->frame_time = smoothed_frame_time;
     last_frame_time      = current_frame_time;
 
-    VkContext* vk_ctx               = &renderer->vk_context;
+    VkContext*        vk_ctx        = &renderer->vk_context;
     SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
-    const uint32_t frame_index      = renderer->curr_frame % swapchain_ctx->images.size();
-    const Frame* current_frame      = &renderer->frames[frame_index];
+    const uint32_t    frame_index   = renderer->curr_frame % swapchain_ctx->images.size();
+    const Frame*      current_frame = &renderer->frames[frame_index];
 
     VkCommandBuffer command_buffer = current_frame->command_buffer;
 
@@ -693,11 +728,11 @@ void renderer_draw(Renderer* renderer) {
     VkCommandBufferBeginInfo begin_info = vk_lib::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     VK_CHECK(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-    const VkViewport shadow_map_viewport = vk_lib::viewport(static_cast<float>(renderer->shadow_map_extent.width),
-                                                            static_cast<float>(renderer->shadow_map_extent.height));
+    const VkViewport shadow_map_viewport =
+        vk_lib::viewport(static_cast<float>(renderer->shadow_map_extent.width), static_cast<float>(renderer->shadow_map_extent.height));
 
-    VkExtent2D shadow_map_extent_2d   = vk_lib::extent_2d(renderer->shadow_map_extent.width, renderer->shadow_map_extent.height);
-    const VkRect2D shadow_map_scissor = vk_lib::rect_2d(shadow_map_extent_2d);
+    VkExtent2D     shadow_map_extent_2d = vk_lib::extent_2d(renderer->shadow_map_extent.width, renderer->shadow_map_extent.height);
+    const VkRect2D shadow_map_scissor   = vk_lib::rect_2d(shadow_map_extent_2d);
 
     vkCmdSetViewport(command_buffer, 0, 1, &shadow_map_viewport);
 
@@ -719,17 +754,17 @@ void renderer_draw(Renderer* renderer) {
         vk_lib::rendering_attachment_info(renderer->shadow_map_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                                           VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, &depth_clear_value);
 
-    const VkRect2D shadow_map_render_area              = vk_lib::rect_2d(shadow_map_extent_2d);
+    const VkRect2D           shadow_map_render_area    = vk_lib::rect_2d(shadow_map_extent_2d);
     const VkRenderingInfoKHR shadow_map_rendering_info = vk_lib::rendering_info(shadow_map_render_area, {}, &shadow_map_attachment_info);
 
     vkCmdBeginRenderingKHR(command_buffer, &shadow_map_rendering_info);
 
-    vkCmdSetDepthBias(command_buffer, 1.25f, 0.0f, 1.75f);
+    vkCmdSetDepthBias(command_buffer, -0.5f, 0.0f, -0.5f);
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->shadow_map_graphics_pipeline.pipeline);
 
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->shadow_map_graphics_pipeline.pipeline_layout, 0, 1,
-                            &renderer->scene_descriptor_sets[frame_index], 0, nullptr);
+                            &renderer->shadow_descriptor_sets[frame_index], 0, nullptr);
 
     for (const DrawObject& opaque_draw : renderer->opaque_draws) {
         PushConstants push_constants{};
@@ -769,7 +804,7 @@ void renderer_draw(Renderer* renderer) {
     vkCmdPipelineBarrier2(command_buffer, &shadow_map_dependency_info);
 
     const VkViewport viewport = vk_lib::viewport(static_cast<float>(swapchain_ctx->extent.width), static_cast<float>(swapchain_ctx->extent.height));
-    const VkRect2D scissor    = vk_lib::rect_2d(swapchain_ctx->extent);
+    const VkRect2D   scissor  = vk_lib::rect_2d(swapchain_ctx->extent);
 
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
@@ -787,7 +822,7 @@ void renderer_draw(Renderer* renderer) {
         vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
         VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT);
 
-    VkImage swapchain_image          = swapchain_ctx->images[swapchain_image_index];
+    VkImage     swapchain_image      = swapchain_ctx->images[swapchain_image_index];
     VkImageView swapchain_image_view = swapchain_ctx->image_views[swapchain_image_index];
 
     const VkImageMemoryBarrier2 resolve_draw_image_memory_barrier =
@@ -814,7 +849,7 @@ void renderer_draw(Renderer* renderer) {
         vk_lib::rendering_attachment_info(renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
                                           VK_ATTACHMENT_STORE_OP_DONT_CARE, &depth_clear_value);
 
-    const VkRect2D render_area              = vk_lib::rect_2d(swapchain_ctx->extent);
+    const VkRect2D           render_area    = vk_lib::rect_2d(swapchain_ctx->extent);
     const VkRenderingInfoKHR rendering_info = vk_lib::rendering_info(render_area, color_attachment_infos, &depth_attachment_info);
 
     vkCmdBeginRenderingKHR(command_buffer, &rendering_info);
@@ -867,7 +902,7 @@ void renderer_draw(Renderer* renderer) {
     VK_CHECK(vkEndCommandBuffer(command_buffer));
 
     VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(current_frame->command_buffer);
-    VkSemaphoreSubmitInfo wait_semaphore_submit_info     =
+    VkSemaphoreSubmitInfo     wait_semaphore_submit_info =
         vk_lib::semaphore_submit_info(current_frame->image_available_semaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
     VkSemaphoreSubmitInfo signal_semaphore_submit_info =
         vk_lib::semaphore_submit_info(current_frame->render_finished_semaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
@@ -889,7 +924,7 @@ void renderer_draw(Renderer* renderer) {
     renderer->curr_frame++;
 }
 
-void renderer_compile_pipelines(Renderer* renderer) {
+void renderer_recompile_pipelines(Renderer* renderer) {
     VkDevice device = renderer->vk_context.device;
     vkDeviceWaitIdle(renderer->vk_context.device);
     if (renderer->opaque_graphics_pipeline.pipeline) {
@@ -926,7 +961,7 @@ void renderer_key_callback(GLFWwindow* window, int key, int scancode, int action
     if (key == GLFW_KEY_R) {
         if (action == GLFW_PRESS) {
             std::cout << "Recompiling pipelines" << std::endl;
-            renderer_compile_pipelines(active_renderer);
+            renderer_recompile_pipelines(active_renderer);
         }
     }
 }
@@ -959,13 +994,15 @@ void renderer_create(Renderer* renderer) {
 
     renderer_init_shader_data(renderer);
 
+    renderer_create_shadow_map(renderer);
+
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
-    renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
+    // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
 
     active_renderer = renderer;
 }

@@ -9,6 +9,7 @@ layout (location = 4) in vec2 color_uv;
 layout (location = 5) in vec2 occlusion_uv;
 layout (location = 6) in vec2 metal_rough_uv;
 layout (location = 7) in vec2 emissive_uv;
+layout (location = 8) in vec4 vert_light_pos;
 
 layout (location = 0) out vec4 out_color;
 
@@ -87,7 +88,8 @@ void main() {
 
 
     vec3 view_dir = normalize(scene_data.eye_pos - vec3(vert_position));
-    vec3 light_dir = normalize(vec3(1, 1, 1));
+    vec3 light_dir = scene_data.sun_dir;
+
     vec3 halfway_dir = normalize(light_dir + view_dir);
 
     vec4 albedo = mat.base_color_factors * tex_color;
@@ -110,9 +112,25 @@ void main() {
 
     vec3 ambient_contribution = albedo.rgb * ambient_color * occlusion;
 
-    vec3 final_color = direct_lighting + ambient_contribution + emissive;
+    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
+    vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
+    int radius = 2;
+    float shadow = pow(radius * 2 + 1, 2);
+    for (int x = -radius; x <= radius; x++) {
+        for (int y = -radius; y <= radius; y++) {
+            vec2 offset = vec2(x, y) * texelSize;
+            if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0001){
+                //                out_color = vec4(1, 0, 0, 1);
+                //                return;
+                shadow -= 1;
+            }
+        }
+    }
+    shadow /= pow(radius * 2 + 1, 2);
+    out_color = vec4(shadow);
+
+    vec3 final_color = (direct_lighting * shadow) + ambient_contribution + emissive;
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
-
 }

@@ -26,14 +26,18 @@ struct Material {
 layout (set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 proj;
+    mat4 light_transform;
     vec3 eye_pos;
+    vec3 sun_dir;
 } scene_data;
 
-layout (scalar, set = 1, binding = 0) readonly buffer MaterialBuffer {
+layout (set = 1, binding = 0) uniform sampler2D shadow_map;
+
+layout (scalar, set = 1, binding = 1) readonly buffer MaterialBuffer {
     Material materials[];
 } material_buf;
 
-layout (set = 1, binding = 1) uniform sampler2D tex_samplers[];
+layout (set = 1, binding = 2) uniform sampler2D tex_samplers[];
 
 struct Vertex {
     vec4 color;

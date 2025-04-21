@@ -9,11 +9,20 @@ layout (location = 4) out vec2 color_uv;
 layout (location = 5) out vec2 occlusion_uv;
 layout (location = 6) out vec2 metal_rough_uv;
 layout (location = 7) out vec2 emissive_uv;
+layout (location = 8) out vec4 vert_light_pos;
+
+const mat4 bias_mat = mat4(
+0.5, 0.0, 0.0, 0.0,
+0.0, 0.5, 0.0, 0.0,
+0.0, 0.0, 1.0, 0.0,
+0.5, 0.5, 0.0, 1.0);
 
 void main() {
     Vertex v = constants.vertex_buffer.vertices[gl_VertexIndex];
 
     vert_position = constants.model_transform * vec4(v.position.xyz, 1.f);
+    vert_light_pos = bias_mat * scene_data.light_transform * vert_position;
+
     vert_color = v.color;
     vert_normal = mat3(constants.model_transform) * v.normal.xyz;
 
