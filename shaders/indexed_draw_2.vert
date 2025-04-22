@@ -1,6 +1,12 @@
 #version 450
 #include "common.glsl"
 
+
+layout(location = 0) in vec4 color;
+layout(location = 1) in vec3 position;
+layout(location = 2) in vec3 normal;
+layout(location = 3) in vec2 tex_coords[2];
+
 layout (location = 0) out vec4 vert_position;
 layout (location = 1) out vec4 vert_color;
 layout (location = 2) out vec3 vert_normal;
@@ -18,23 +24,20 @@ const mat4 bias_mat = mat4(
 0.5, 0.5, 0.0, 1.0);
 
 void main() {
-    Vertex v = constants.vertex_buffer.vertices[gl_VertexIndex];
 
-    vert_position = constants.model_transform * vec4(v.position.xyz, 1.f);
+    vert_position = constants.model_transform * vec4(position.xyz, 1.f);
     vert_light_pos = bias_mat * scene_data.light_transform * vert_position;
 
-    vert_color = v.color;
-    //    vert_normal = mat3(constants.model_transform) * v.normal.xyz;
-    mat3 normal_matrix = transpose(inverse(mat3(constants.model_transform)));
-    vert_normal = normalize(mat3(constants.model_transform) * v.normal.xyz);
+    vert_color = color;
+    vert_normal = normalize(mat3(constants.model_transform) * normal.xyz);
 
     gl_Position = scene_data.proj * scene_data.view * vert_position;
 
     Material mat = material_buf.materials[nonuniformEXT(constants.material_index)];
 
-    normal_uv = v.tex_coords[mat.normal_texture.tex_coord];
-    color_uv = v.tex_coords[mat.base_color_texture.tex_coord];
-    occlusion_uv = v.tex_coords[mat.occlusion_texture.tex_coord];
-    metal_rough_uv = v.tex_coords[mat.metallic_roughness_texture.tex_coord];
-    emissive_uv = v.tex_coords[mat.emissive_texture.tex_coord];
+    normal_uv = tex_coords[mat.normal_texture.tex_coord];
+    color_uv = tex_coords[mat.base_color_texture.tex_coord];
+    occlusion_uv = tex_coords[mat.occlusion_texture.tex_coord];
+    metal_rough_uv = tex_coords[mat.metallic_roughness_texture.tex_coord];
+    emissive_uv = tex_coords[mat.emissive_texture.tex_coord];
 }

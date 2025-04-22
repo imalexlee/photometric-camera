@@ -55,6 +55,23 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
 
     VkDevice device = renderer->vk_context.device;
 
+    VkVertexInputBindingDescription vertex_input_binding = vk_lib::vertex_input_binding_description(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX);
+    std::array                      vertex_bindings_descriptions = {vertex_input_binding};
+
+    VkVertexInputAttributeDescription vert_color_attribute =
+        vk_lib::vertex_input_attribute_description(0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color));
+    VkVertexInputAttributeDescription vert_position_attribute =
+        vk_lib::vertex_input_attribute_description(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position));
+    VkVertexInputAttributeDescription vert_normal_attribute =
+        vk_lib::vertex_input_attribute_description(0, 2, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal));
+    VkVertexInputAttributeDescription vert_tex_coord_1_attribute =
+        vk_lib::vertex_input_attribute_description(0, 3, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, tex_coord[0]));
+    VkVertexInputAttributeDescription vert_tex_coord_2_attribute =
+        vk_lib::vertex_input_attribute_description(0, 4, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, tex_coord[1]));
+
+    std::array veretx_attribute_descriptions = {vert_color_attribute, vert_position_attribute, vert_normal_attribute, vert_tex_coord_1_attribute,
+                                                vert_tex_coord_2_attribute};
+
     std::array                 set_layouts          = {renderer->scene_descriptor_set_layout, renderer->asset_descriptor_set_layout};
     VkPushConstantRange        push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_ALL, sizeof(PushConstants));
     std::array                 push_constant_ranges = {push_constant_range};
@@ -66,24 +83,25 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     const VkPipelineRenderingCreateInfoKHR rendering_create_info =
         vk_lib::pipeline_rendering_create_info(color_attachment_formats, VK_FORMAT_D32_SFLOAT);
 
-    VkShaderModule                       vert_shader        = load_shader(device, "../shaders/indexed_draw.vert.spv");
-    VkShaderModule                       frag_shader        = load_shader(device, "../shaders/gltf_pbr.frag.spv");
-    VkPipelineShaderStageCreateInfo      vert_shader_stage  = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vert_shader);
-    VkPipelineShaderStageCreateInfo      frag_shader_stage  = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader);
-    std::array                           shader_stages      = {vert_shader_stage, frag_shader_stage};
-    VkPipelineVertexInputStateCreateInfo vertex_input_state = vk_lib::pipeline_vertex_input_state_create_info();
+    VkShaderModule                       vert_shader       = load_shader(device, "../shaders/indexed_draw_2.vert.spv");
+    VkShaderModule                       frag_shader       = load_shader(device, "../shaders/gltf_pbr.frag.spv");
+    VkPipelineShaderStageCreateInfo      vert_shader_stage = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vert_shader);
+    VkPipelineShaderStageCreateInfo      frag_shader_stage = vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader);
+    std::array                           shader_stages     = {vert_shader_stage, frag_shader_stage};
+    VkPipelineVertexInputStateCreateInfo vertex_input_state =
+        vk_lib::pipeline_vertex_input_state_create_info(vertex_bindings_descriptions, veretx_attribute_descriptions);
     // todo: make input assembly state dynamic later on
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state =
         vk_lib::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     VkPipelineViewportStateCreateInfo      viewport_state = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
     VkPipelineRasterizationStateCreateInfo rasterization_state =
-        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_CLOCKWISE, VK_CULL_MODE_NONE, true, 0, -5);
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_CLOCKWISE, VK_CULL_MODE_BACK_BIT, true, 0, -5);
     VkPipelineMultisampleStateCreateInfo  multisample_state                   = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
     VkPipelineColorBlendAttachmentState   opaque_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
     std::array                            opaque_color_blends                 = {opaque_color_blend_attachment_state};
     VkPipelineColorBlendStateCreateInfo   opaque_color_blend_state            = vk_lib::pipeline_color_blend_state_create_info(opaque_color_blends);
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state = vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER);
-    std::array                            dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT};
+    std::array                            dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_FRONT_FACE};
     VkPipelineDynamicStateCreateInfo      dynamic_state       = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
     VkGraphicsPipelineCreateInfo          opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         pipeline_layout, nullptr, shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state, &rasterization_state,
@@ -135,14 +153,16 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     VkPipelineLayout shadow_map_pipeline_layout;
     VK_CHECK(vkCreatePipelineLayout(device, &shadow_map_layout_create_info, nullptr, &shadow_map_pipeline_layout));
 
-    VkPipelineMultisampleStateCreateInfo shadow_map_multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_1_BIT);
-    VkPipelineColorBlendStateCreateInfo  shadow_map_color_blend_state = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
-    VkPipelineRenderingCreateInfoKHR     shadow_map_rendering_ci      = vk_lib::pipeline_rendering_create_info({}, VK_FORMAT_D32_SFLOAT);
+    VkPipelineMultisampleStateCreateInfo   shadow_map_multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_1_BIT);
+    VkPipelineColorBlendStateCreateInfo    shadow_map_color_blend_state = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
+    VkPipelineRenderingCreateInfoKHR       shadow_map_rendering_ci      = vk_lib::pipeline_rendering_create_info({}, VK_FORMAT_D32_SFLOAT);
+    VkPipelineRasterizationStateCreateInfo shadow_map_rasterization_state =
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_CULL_MODE_NONE);
 
     VkGraphicsPipelineCreateInfo shadow_map_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         shadow_map_pipeline_layout, nullptr, shadow_map_shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state,
-        &rasterization_state, &shadow_map_multisample_state, &shadow_map_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0,
-        nullptr, 0, &shadow_map_rendering_ci);
+        &shadow_map_rasterization_state, &shadow_map_multisample_state, &shadow_map_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr,
+        0, 0, nullptr, 0, &shadow_map_rendering_ci);
 
     VkPipeline shadow_map_pipeline;
     VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &shadow_map_graphics_pipeline_ci, nullptr, &shadow_map_pipeline));
@@ -533,6 +553,12 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
             DrawObject new_draw_object{};
             new_draw_object.transform = glm::make_mat4(node.world_transform);
 
+            if (glm::determinant(new_draw_object.transform) > 0) {
+                new_draw_object.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+            } else {
+                new_draw_object.front_face = VK_FRONT_FACE_CLOCKWISE;
+            }
+
             if (gltf_primitive.index_buffer.has_value()) {
                 new_draw_object.index_buffer = gltf_primitive.index_buffer.value();
             } else {
@@ -757,21 +783,26 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdBeginRenderingKHR(command_buffer, &shadow_map_rendering_info);
 
-    vkCmdSetDepthBias(command_buffer, -0.5f, 0.0f, -0.5f);
+    // vkCmdSetDepthBias(command_buffer, -0.5f, 0.0f, -0.5f);
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->shadow_map_graphics_pipeline.pipeline);
 
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->shadow_map_graphics_pipeline.pipeline_layout, 0, 1,
                             &renderer->shadow_descriptor_sets[frame_index], 0, nullptr);
 
+    VkDeviceSize vertex_offset = 0;
     for (const DrawObject& opaque_draw : renderer->opaque_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
 
+        vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
+
         vkCmdPushConstants(command_buffer, renderer->shadow_map_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(PushConstants), &push_constants);
+
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &opaque_draw.vertex_buffer.buffer, &vertex_offset);
 
         vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
         vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
@@ -783,9 +814,12 @@ void renderer_draw(Renderer* renderer) {
         push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
         push_constants.material_index     = transparent_draw.material_index;
 
+        vkCmdSetFrontFace(command_buffer, transparent_draw.front_face);
+
         vkCmdPushConstants(command_buffer, renderer->shadow_map_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(PushConstants), &push_constants);
 
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &transparent_draw.vertex_buffer.buffer, &vertex_offset);
         vkCmdBindIndexBuffer(command_buffer, transparent_draw.index_buffer.buffer, 0, transparent_draw.index_type);
         vkCmdDrawIndexed(command_buffer, transparent_draw.index_count, 1, 0, 0, 0);
     }
@@ -865,8 +899,12 @@ void renderer_draw(Renderer* renderer) {
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
 
+        vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
+
         vkCmdPushConstants(command_buffer, renderer->opaque_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants),
                            &push_constants);
+
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &opaque_draw.vertex_buffer.buffer, &vertex_offset);
 
         vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
         vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
@@ -880,8 +918,12 @@ void renderer_draw(Renderer* renderer) {
         push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
         push_constants.material_index     = transparent_draw.material_index;
 
+        vkCmdSetFrontFace(command_buffer, transparent_draw.front_face);
+
         vkCmdPushConstants(command_buffer, renderer->transparent_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants),
                            &push_constants);
+
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &transparent_draw.vertex_buffer.buffer, &vertex_offset);
 
         vkCmdBindIndexBuffer(command_buffer, transparent_draw.index_buffer.buffer, 0, transparent_draw.index_type);
         vkCmdDrawIndexed(command_buffer, transparent_draw.index_count, 1, 0, 0, 0);
@@ -996,7 +1038,8 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");

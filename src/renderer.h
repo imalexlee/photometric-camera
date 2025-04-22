@@ -53,6 +53,7 @@ struct DrawObject {
     glm::mat4       transform{};
     AllocatedBuffer index_buffer{};
     AllocatedBuffer vertex_buffer{};
+    VkFrontFace     front_face{};
     VkIndexType     index_type{};
     uint32_t        index_count{};
     uint32_t        material_index{};

@@ -23,7 +23,7 @@ struct Material {
     float normal_scale;
 };
 
-layout (set = 0, binding = 0) uniform SceneData {
+layout (scalar, set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 proj;
     mat4 light_transform;

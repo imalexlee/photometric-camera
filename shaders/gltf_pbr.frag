@@ -112,16 +112,16 @@ void main() {
 
     vec3 ambient_contribution = albedo.rgb * ambient_color * occlusion;
 
-    int radius = 7;
+    int radius = 4;
     float shadow = pow(radius * 2 + 1, 2);
 
     if (n_dot_l > 0.0){
         float texelSize = 1.0 / textureSize(shadow_map, 0).x;
-        vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
+        vec4 shadow_coords = vert_light_pos / vert_light_pos.w + vec4(vert_normal * 0.0001, 0);
         for (int x = -radius; x <= radius; x++) {
             for (int y = -radius; y <= radius; y++) {
                 vec2 offset = vec2(x, y) * texelSize;
-                if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0001){
+                if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0005){
                     shadow -= 1;
                 }
             }
@@ -133,5 +133,4 @@ void main() {
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
-
 }

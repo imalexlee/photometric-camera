@@ -628,8 +628,8 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
             VkBufferCopy buffer_copy = vk_lib::buffer_copy(vertex_data_size);
 
             // create the actual index buffer on the gpu
-            VkBufferCreateInfo vertex_buffer_ci =
-                vk_lib::buffer_create_info(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vertex_data_size);
+            VkBufferCreateInfo vertex_buffer_ci = vk_lib::buffer_create_info(
+                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertex_data_size);
 
             VmaAllocationCreateInfo allocation_ci{};
             allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
