@@ -14,12 +14,12 @@
 static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_pool, VkQueue queue,
                                         std::function<void(VkCommandBuffer command_buffer)>&& function) {
 
-    VkFence                 fence{};
+    VkFence fence{};
     const VkFenceCreateInfo fence_ci = vk_lib::fence_create_info();
     VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &fence));
 
     const VkCommandBufferAllocateInfo command_buffer_ai = vk_lib::command_buffer_allocate_info(command_pool);
-    VkCommandBuffer                   cmd_buf;
+    VkCommandBuffer cmd_buf;
     VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &cmd_buf));
 
     const VkCommandBufferBeginInfo command_buffer_bi = vk_lib::command_buffer_begin_info();
@@ -30,7 +30,7 @@ static void vk_command_immediate_submit(VkDevice device, VkCommandPool command_p
     VK_CHECK(vkEndCommandBuffer(cmd_buf));
 
     const VkCommandBufferSubmitInfo command_buffer_submit_info = vk_lib::command_buffer_submit_info(cmd_buf);
-    const VkSubmitInfo2             submit_info_2              = vk_lib::submit_info_2(&command_buffer_submit_info);
+    const VkSubmitInfo2 submit_info_2                          = vk_lib::submit_info_2(&command_buffer_submit_info);
 
     VK_CHECK(vkQueueSubmit2(queue, 1, &submit_info_2, fence));
 
@@ -73,7 +73,7 @@ static std::string cgltf_result_to_string(cgltf_result result) {
 static void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_index, uint32_t color_channels, VkFormat* uncompressed_vk_format,
                                  VkFormat* ideal_compressed_vk_format, ktx_transcode_fmt_e* ktx_transcode_format) {
     const cgltf_image* target_image = &cgltf_data->images[image_index];
-    bool               is_srgb      = true; // default to sRGB, we'll set to false for data textures
+    bool is_srgb                    = true; // default to sRGB, we'll set to false for data textures
 
     for (uint32_t i = 0; i < cgltf_data->materials_count; i++) {
         const cgltf_material* material = &cgltf_data->materials[i];
@@ -127,12 +127,12 @@ static void get_format_for_image(const cgltf_data* cgltf_data, uint32_t image_in
 
     switch (color_channels) {
     case 1:
-        *uncompressed_vk_format     = VK_FORMAT_R8_UNORM;
+        *uncompressed_vk_format = VK_FORMAT_R8_UNORM;
         *ideal_compressed_vk_format = VK_FORMAT_BC4_UNORM_BLOCK;
         *ktx_transcode_format       = KTX_TTF_BC4_R;
         break;
     case 2:
-        *uncompressed_vk_format     = VK_FORMAT_R8G8_UNORM;
+        *uncompressed_vk_format = VK_FORMAT_R8G8_UNORM;
         *ideal_compressed_vk_format = VK_FORMAT_BC5_UNORM_BLOCK;
         *ktx_transcode_format       = KTX_TTF_BC5_RG;
         break;
@@ -165,11 +165,11 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         vmaDestroyBuffer(allocator, staging_buffer->buffer, staging_buffer->allocation);
     }
     const VkBufferCreateInfo staging_buffer_ci = vk_lib::buffer_create_info(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, data_size, 0);
-    VmaAllocationCreateInfo  allocation_ci{};
+    VmaAllocationCreateInfo allocation_ci{};
     allocation_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
     allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     VK_CHECK(vmaCreateBuffer(allocator, &staging_buffer_ci, &allocation_ci, &staging_buffer->buffer, &staging_buffer->allocation,
-                             &staging_buffer->allocation_info));
+        &staging_buffer->allocation_info));
 }
 
 // load gltf images, compress them, then create vulkan images and images views from them
@@ -199,7 +199,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         constexpr int required_components = 4;
 
         const cgltf_buffer_view* buffer_view;
-        std::string              uri;
+        std::string uri;
 
         if (cgltf_data->file_type == cgltf_file_type_glb) {
             buffer_view = cgltf_data->images[i].buffer_view;
@@ -211,11 +211,11 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         }
 
         ktx_transcode_fmt_e ktx_transcode_format{};
-        VkFormat            uncompressed_format{};
-        VkFormat            compressed_format{}; // may not need this
+        VkFormat uncompressed_format{};
+        VkFormat compressed_format{}; // may not need this
         get_format_for_image(cgltf_data, i, required_components, &uncompressed_format, &compressed_format, &ktx_transcode_format);
 
-        ktxTexture2*   ktx_texture = nullptr;
+        ktxTexture2* ktx_texture = nullptr;
         KTX_error_code result;
 
         // 2. look into cache for images, if the cache directory exists
@@ -305,8 +305,8 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
             }
         }
 
-        VkExtent3D        base_image_extent = vk_lib::extent_3d(ktx_texture->baseWidth, ktx_texture->baseHeight);
-        VkImageCreateInfo image_ci =
+        VkExtent3D base_image_extent = vk_lib::extent_3d(ktx_texture->baseWidth, ktx_texture->baseHeight);
+        VkImageCreateInfo image_ci   =
             vk_lib::image_create_info(static_cast<VkFormat>(ktx_texture->vkFormat), VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                       base_image_extent, ktx_texture->numLevels);
 
@@ -320,7 +320,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 
         // create image view
         VkImageSubresourceRange subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT, ktx_texture->numLevels);
-        VkImageViewCreateInfo   image_view_ci =
+        VkImageViewCreateInfo image_view_ci       =
             vk_lib::image_view_create_info(static_cast<VkFormat>(ktx_texture->vkFormat), new_texture.image, &subresource_range);
         vkCreateImageView(device, &image_view_ci, nullptr, &new_texture.image_view);
 
@@ -345,8 +345,8 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
             }
 
             VkImageSubresourceLayers image_subresource = vk_lib::image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT, mip_level);
-            VkExtent3D               image_extent      = vk_lib::extent_3d(ktx_texture->baseWidth >> mip_level, ktx_texture->baseHeight >> mip_level);
-            VkBufferImageCopy        buffer_image_copy = vk_lib::buffer_image_copy(image_subresource, image_extent, ktx_offset);
+            VkExtent3D image_extent                    = vk_lib::extent_3d(ktx_texture->baseWidth >> mip_level, ktx_texture->baseHeight >> mip_level);
+            VkBufferImageCopy buffer_image_copy        = vk_lib::buffer_image_copy(image_subresource, image_extent, ktx_offset);
 
             buffer_image_copies.push_back(buffer_image_copy);
         }
@@ -408,23 +408,23 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
         switch (cgltf_sampler->min_filter) {
         case cgltf_filter_type_nearest:
         case cgltf_filter_type_nearest_mipmap_nearest:
-            sampler_info.minFilter  = VK_FILTER_NEAREST;
+            sampler_info.minFilter = VK_FILTER_NEAREST;
             sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
             break;
 
         case cgltf_filter_type_linear:
         case cgltf_filter_type_linear_mipmap_nearest:
-            sampler_info.minFilter  = VK_FILTER_LINEAR;
+            sampler_info.minFilter = VK_FILTER_LINEAR;
             sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
             break;
 
         case cgltf_filter_type_nearest_mipmap_linear:
-            sampler_info.minFilter  = VK_FILTER_NEAREST;
+            sampler_info.minFilter = VK_FILTER_NEAREST;
             sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
             break;
 
         default:
-            sampler_info.minFilter  = VK_FILTER_LINEAR;
+            sampler_info.minFilter = VK_FILTER_LINEAR;
             sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
             break;
         }
@@ -494,9 +494,27 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                 primitive.material = gltf_primitive->material - cgltf_data->materials;
             }
 
-            if (gltf_primitive->type != cgltf_primitive_type_invalid) {
-                primitive.mode = static_cast<PrimitiveMode>(gltf_primitive->type - 1);
+            switch (gltf_primitive->type) {
+            case cgltf_primitive_type_points:
+                primitive.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+                break;
+            case cgltf_primitive_type_lines:
+                primitive.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+                break;
+            case cgltf_primitive_type_line_strip:
+            case cgltf_primitive_type_line_loop:
+                primitive.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+                break;
+            case cgltf_primitive_type_triangle_strip:
+                primitive.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+                break;
+            case cgltf_primitive_type_triangle_fan:
+                primitive.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+                break;
+            default:
+                primitive.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
             }
+
             // load indices if present
             if (gltf_primitive->indices) {
                 const cgltf_accessor* indices_accessor = gltf_primitive->indices;
@@ -510,7 +528,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                 primitive.index_count = indices_accessor->count;
                 memcpy(staging_buffer->allocation_info.pMappedData,
                        static_cast<uint8_t*>(indices_accessor->buffer_view->buffer->data) + indices_accessor->offset +
-                           indices_accessor->buffer_view->offset,
+                       indices_accessor->buffer_view->offset,
                        indices_accessor->buffer_view->size);
 
                 VkBufferCopy buffer_copy = vk_lib::buffer_copy(indices_accessor->buffer_view->size);
@@ -523,7 +541,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 
                 AllocatedBuffer index_buffer{};
                 VK_CHECK(vmaCreateBuffer(allocator, &indices_buffer_ci, &allocation_ci, &index_buffer.buffer, &index_buffer.allocation,
-                                         &index_buffer.allocation_info));
+                    &index_buffer.allocation_info));
 
                 primitive.index_buffer = index_buffer;
 
@@ -614,6 +632,19 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
                         memcpy(vertex_arr[color_idx].color, color, 4 * sizeof(float));
                     }
                 }
+
+                // get tangents
+                if (gltf_attribute->type == cgltf_attribute_type_tangent) {
+                    const cgltf_accessor* tangent_accessor = gltf_attribute->data;
+                    for (uint64_t tangent_idx = 0; tangent_idx < tangent_accessor->count; tangent_idx++) {
+                        const float* gltf_tangent = reinterpret_cast<const float*>(
+                            static_cast<uint8_t*>(tangent_accessor->buffer_view->buffer->data) +
+                            tangent_accessor->offset + tangent_accessor->buffer_view->offset +
+                            tangent_idx * tangent_accessor->stride);
+
+                        memcpy(vertex_arr[tangent_idx].tangent, gltf_tangent, tangent_accessor->stride);
+                    }
+                }
             }
 
             if (!colors_found) {
@@ -629,13 +660,14 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 
             // create the actual index buffer on the gpu
             VkBufferCreateInfo vertex_buffer_ci = vk_lib::buffer_create_info(
-                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertex_data_size);
+                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                vertex_data_size);
 
             VmaAllocationCreateInfo allocation_ci{};
             allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
             VK_CHECK(vmaCreateBuffer(allocator, &vertex_buffer_ci, &allocation_ci, &primitive.vertex_buffer.buffer,
-                                     &primitive.vertex_buffer.allocation, &primitive.vertex_buffer.allocation_info));
+                &primitive.vertex_buffer.allocation, &primitive.vertex_buffer.allocation_info));
 
             vk_command_immediate_submit(device, command_pool, queue, [&](VkCommandBuffer cmd_buf) {
                 vkCmdCopyBuffer(cmd_buf, staging_buffer->buffer, primitive.vertex_buffer.buffer, 1, &buffer_copy);
@@ -727,7 +759,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
     nodes.reserve(cgltf_data->nodes_count);
 
     for (uint32_t i = 0; i < cgltf_data->nodes_count; i++) {
-        GltfNode          node{};
+        GltfNode node{};
         const cgltf_node* gltf_node = &cgltf_data->nodes[i];
 
         cgltf_node_transform_local(gltf_node, node.local_transform);
@@ -793,7 +825,7 @@ static void allocate_staging_buffer(VmaAllocator allocator, uint64_t data_size, 
 GltfAsset load_gltf(const LoadOptions* load_options, VkDevice device, VmaAllocator allocator, VkCommandPool command_pool, VkQueue queue,
                     uint32_t queue_family_index) {
     cgltf_options options{};
-    cgltf_data*   gltf_data = nullptr;
+    cgltf_data* gltf_data = nullptr;
 
     cgltf_result result = cgltf_parse_file(&options, load_options->gltf_path.string().c_str(), &gltf_data);
     if (result != cgltf_result_success) {

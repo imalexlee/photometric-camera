@@ -3,13 +3,14 @@
 
 layout (location = 0) in vec4 vert_position;
 layout (location = 1) in vec4 vert_color;
-layout (location = 2) in vec3 vert_normal;
-layout (location = 3) in vec2 normal_uv;
-layout (location = 4) in vec2 color_uv;
-layout (location = 5) in vec2 occlusion_uv;
-layout (location = 6) in vec2 metal_rough_uv;
-layout (location = 7) in vec2 emissive_uv;
-layout (location = 8) in vec4 vert_light_pos;
+layout (location = 2) in vec4 vert_tangent;
+layout (location = 3) in vec3 vert_normal;
+layout (location = 4) in vec2 normal_uv;
+layout (location = 5) in vec2 color_uv;
+layout (location = 6) in vec2 occlusion_uv;
+layout (location = 7) in vec2 metal_rough_uv;
+layout (location = 8) in vec2 emissive_uv;
+layout (location = 9) in vec4 vert_light_pos;
 
 layout (location = 0) out vec4 out_color;
 
@@ -79,6 +80,15 @@ void main() {
     vec3 tex_normal = (texture(tex_samplers[nonuniformEXT (mat.normal_texture.index)], normal_uv).xyz * vec3(2.f) - vec3(1.f)) * vec3(mat.normal_scale);
     vec4 tex_color = texture(tex_samplers[nonuniformEXT (mat.base_color_texture.index)], color_uv).rgba;
 
+
+    // until i can find a branchless option, simply don't apply normal mapping if the tex_normal == vec(1)
+    // since this means we read the default texture. aka, there is no normal map.
+    if(tex_normal == vec3(1)){
+        vec3 bitangent = cross(vert_normal, tangent) * v.tangent.w.
+        mat3 TBN = mat3(vert_tangent, bitangent, vert_normal);
+        vec3 normal = normalize(TBN * tex_normal);
+    }
+
     float occlusion = 1.f + mat.occlusion_strength * (texture(tex_samplers[nonuniformEXT (mat.occlusion_texture.index)], occlusion_uv).r - 1.f);
     vec3 emissive = texture(tex_samplers[nonuniformEXT (mat.emissive_texture.index)], emissive_uv).rgb * mat.emissive_factors;
 
@@ -94,7 +104,7 @@ void main() {
 
     vec4 albedo = mat.base_color_factors * tex_color;
 
-    vec3 specular_brdf = vec3(specular_brdf(vert_normal, halfway_dir, light_dir, view_dir, roughness));
+    vec3 specular_brdf = vec3(specular_brdf(normal, halfway_dir, light_dir, view_dir, roughness));
     vec3 diffuse_brdf = diffuse_brdf(vec3(albedo));
 
     vec3 metal_brdf = conductor_fresnel(specular_brdf, albedo.rgb, view_dir, halfway_dir);
@@ -105,7 +115,7 @@ void main() {
     vec3 lightColor = vec3(1.0, 1.0, 1.0);
     float light_intensity = 10;
 
-    float n_dot_l = max(dot(vert_normal, light_dir), 0.0);
+    float n_dot_l = max(dot(normal, light_dir), 0.0);
     vec3 direct_lighting = material * lightColor * light_intensity * n_dot_l;
 
     vec3 ambient_color = vec3(0.01) * light_intensity;
@@ -115,9 +125,10 @@ void main() {
     int radius = 4;
     float shadow = pow(radius * 2 + 1, 2);
 
+    // only do expensive shadow filtering for geometry facing the light
     if (n_dot_l > 0.0){
         float texelSize = 1.0 / textureSize(shadow_map, 0).x;
-        vec4 shadow_coords = vert_light_pos / vert_light_pos.w + vec4(vert_normal * 0.0001, 0);
+        vec4 shadow_coords = vert_light_pos / vert_light_pos.w + vec4(normal * 0.0001, 0);
         for (int x = -radius; x <= radius; x++) {
             for (int y = -radius; y <= radius; y++) {
                 vec2 offset = vec2(x, y) * texelSize;

@@ -41,6 +41,7 @@ layout (set = 1, binding = 2) uniform sampler2D tex_samplers[];
 
 struct Vertex {
     vec4 color;
+    vec4 tangent;
     vec3 position;
     vec3 normal;
     vec2 tex_coords[2];
