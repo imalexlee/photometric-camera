@@ -15,12 +15,21 @@ struct Material {
     TextureInfo occlusion_texture;
     TextureInfo emissive_texture;
 
+// extension textures
+    TextureInfo clearcoat_texture;
+    TextureInfo clearcoat_roughness_texture;
+    TextureInfo clearcoat_normal_texture;
+
     vec4 base_color_factors;
     vec3 emissive_factors;
     float metallic_factor;
     float roughness_factor;
     float occlusion_strength;
     float normal_scale;
+
+// extension factors
+    float clearcoat_factor;
+    float clearcoat_roughness_factor;
 };
 
 layout (scalar, set = 0, binding = 0) uniform SceneData {

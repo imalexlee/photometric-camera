@@ -5,12 +5,15 @@ layout (location = 0) out vec4 vert_position;
 layout (location = 1) out vec4 vert_color;
 layout (location = 2) out vec4 vert_tangent;
 layout (location = 3) out vec3 vert_normal;
-layout (location = 4) out vec2 normal_uv;
-layout (location = 5) out vec2 color_uv;
-layout (location = 6) out vec2 occlusion_uv;
-layout (location = 7) out vec2 metal_rough_uv;
-layout (location = 8) out vec2 emissive_uv;
-layout (location = 9) out vec4 vert_light_pos;
+layout (location = 4) out vec4 vert_light_pos;
+layout (location = 5) out vec2 normal_uv;
+layout (location = 6) out vec2 color_uv;
+layout (location = 7) out vec2 occlusion_uv;
+layout (location = 8) out vec2 metal_rough_uv;
+layout (location = 9) out vec2 emissive_uv;
+layout (location = 10) out vec2 clearcoat_uv;
+layout (location = 11) out vec2 clearcoat_rough_uv;
+layout (location = 12) out vec2 clearcoat_normal_uv;
 
 const mat4 bias_mat = mat4(
 0.5, 0.0, 0.0, 0.0,
@@ -38,4 +41,8 @@ void main() {
     occlusion_uv = v.tex_coords[mat.occlusion_texture.tex_coord];
     metal_rough_uv = v.tex_coords[mat.metallic_roughness_texture.tex_coord];
     emissive_uv = v.tex_coords[mat.emissive_texture.tex_coord];
+
+    clearcoat_uv = v.tex_coords[mat.clearcoat_texture.tex_coord];
+    clearcoat_rough_uv = v.tex_coords[mat.clearcoat_roughness_texture.tex_coord];
+    clearcoat_normal_uv = v.tex_coords[mat.clearcoat_normal_texture.tex_coord];
 }

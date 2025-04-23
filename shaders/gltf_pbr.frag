@@ -5,12 +5,15 @@ layout (location = 0) in vec4 vert_position;
 layout (location = 1) in vec4 vert_color;
 layout (location = 2) in vec4 vert_tangent;
 layout (location = 3) in vec3 vert_normal;
-layout (location = 4) in vec2 normal_uv;
-layout (location = 5) in vec2 color_uv;
-layout (location = 6) in vec2 occlusion_uv;
-layout (location = 7) in vec2 metal_rough_uv;
-layout (location = 8) in vec2 emissive_uv;
-layout (location = 9) in vec4 vert_light_pos;
+layout (location = 4) in vec4 vert_light_pos;
+layout (location = 5) in vec2 normal_uv;
+layout (location = 6) in vec2 color_uv;
+layout (location = 7) in vec2 occlusion_uv;
+layout (location = 8) in vec2 metal_rough_uv;
+layout (location = 9) in vec2 emissive_uv;
+layout (location = 10) in vec2 clearcoat_uv;
+layout (location = 11) in vec2 clearcoat_rough_uv;
+layout (location = 12) in vec2 clearcoat_normal_uv;
 
 layout (location = 0) out vec4 out_color;
 
@@ -64,6 +67,14 @@ vec3 fresnel_mix(vec3 base, vec3 layer, vec3 view_dir, vec3 halfway) {
     return mix(base, layer, fr);
 }
 
+vec3 fresnel_coat(vec3 base, vec3 layer, float weight, vec3 view_dir, vec3 halfway) {
+    float v_dot_h = dot(view_dir, halfway);
+    float v_dot_h_abs = max(abs(v_dot_h), epsilon);
+    float f_0 = 0.04;
+    float fr = f_0 + (1 - f_0) * pow(1 - v_dot_h_abs, 5);
+    return mix(base, layer, weight * fr);
+}
+
 vec3 ACESFilm(vec3 x)
 {
     float a = 2.51f;
@@ -78,29 +89,29 @@ void main() {
     Material mat = material_buf.materials[nonuniformEXT (constants.material_index)];
 
     vec3 tex_normal = texture(tex_samplers[nonuniformEXT (mat.normal_texture.index)], normal_uv).xyz;
-    tex_normal = tex_normal* 2.f - 1.f;
-    tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
-    tex_normal = normalize(tex_normal);
-
     vec4 tex_color = texture(tex_samplers[nonuniformEXT (mat.base_color_texture.index)], color_uv).rgba;
 
+    vec3 normal = vert_normal;
 
     // until i can find a branchless option, simply don't apply normal mapping if the tex_normal == vec(1)
     // since this means we read the default texture. aka, there is no normal map.
-    vec3 normal = vert_normal;
+    mat3 TBN;
     if (tex_normal != vec3(1)){
+        tex_normal = tex_normal* 2.f - 1.f;
+        tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
+        tex_normal = normalize(tex_normal);
         vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
-        mat3 TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
+        TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
         normal = normalize(TBN * tex_normal);
     }
 
     float occlusion = 1.f + mat.occlusion_strength * (texture(tex_samplers[nonuniformEXT (mat.occlusion_texture.index)], occlusion_uv).r - 1.f);
     vec3 emissive = texture(tex_samplers[nonuniformEXT (mat.emissive_texture.index)], emissive_uv).rgb * mat.emissive_factors;
 
+
     vec2 metallic_roughness = texture(tex_samplers[nonuniformEXT (mat.metallic_roughness_texture.index)], metal_rough_uv).bg;
     float metallic = metallic_roughness.x * mat.metallic_factor;
     float roughness = metallic_roughness.y * mat.roughness_factor;
-
 
     vec3 view_dir = normalize(scene_data.eye_pos - vec3(vert_position));
     vec3 light_dir = scene_data.sun_dir;
@@ -109,18 +120,35 @@ void main() {
 
     vec4 albedo = mat.base_color_factors * tex_color;
 
-    vec3 specular_brdf = vec3(specular_brdf(normal, halfway_dir, light_dir, view_dir, roughness));
+    vec3 specular_brdf_val = vec3(specular_brdf(normal, halfway_dir, light_dir, view_dir, roughness));
     vec3 diffuse_brdf = diffuse_brdf(vec3(albedo));
 
-    vec3 metal_brdf = conductor_fresnel(specular_brdf, albedo.rgb, view_dir, halfway_dir);
-    vec3 dielectric_brdf = fresnel_mix(diffuse_brdf, specular_brdf, view_dir, halfway_dir);
+    vec3 metal_brdf = conductor_fresnel(specular_brdf_val, albedo.rgb, view_dir, halfway_dir);
+    vec3 dielectric_brdf = fresnel_mix(diffuse_brdf, specular_brdf_val, view_dir, halfway_dir);
 
     vec3 material = mix(dielectric_brdf, metal_brdf, metallic);
+
+    float n_dot_l = max(dot(normal, light_dir), 0.0);
+
+    float clearcoat = texture(tex_samplers[nonuniformEXT (mat.clearcoat_texture.index)], clearcoat_uv).r * mat.clearcoat_factor;
+    if (clearcoat != 0){
+
+        float clearcoat_roughness = texture(tex_samplers[nonuniformEXT (mat.clearcoat_roughness_texture.index)], clearcoat_rough_uv).g * mat.clearcoat_roughness_factor;
+        vec3 clearcoat_normal  = normal;
+        vec3 tex_clearcoat_normal = texture(tex_samplers[nonuniformEXT (mat.clearcoat_normal_texture.index)], clearcoat_normal_uv).xyz;
+        // only apply bump mapping if clearcoat normal isn't the default texture
+        if (tex_clearcoat_normal != vec3(1)){
+            tex_clearcoat_normal = tex_clearcoat_normal * 2.f - 1.f;
+            tex_clearcoat_normal = normalize(TBN * tex_clearcoat_normal);
+        }
+
+        float clearcoat_brdf = specular_brdf(clearcoat_normal, halfway_dir, light_dir, view_dir, roughness);
+        material = fresnel_coat(material, vec3(clearcoat_brdf), clearcoat, view_dir, halfway_dir);
+    }
 
     vec3 lightColor = vec3(1.0, 1.0, 1.0);
     float light_intensity = 10;
 
-    float n_dot_l = max(dot(normal, light_dir), 0.0);
     vec3 direct_lighting = material * lightColor * light_intensity * n_dot_l;
 
     vec3 ambient_color = vec3(0.015) * light_intensity;

@@ -608,6 +608,22 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
         }
         new_material.emissive_factors = glm::make_vec3(gltf_material.emissive_factors);
 
+        // EXTENSIONS
+        if (gltf_material.clearcoat_texture.has_value()) {
+            new_material.clearcoat_texture = gltf_material.clearcoat_texture.value();
+            new_material.clearcoat_texture.index += renderer->texture_count;
+        }
+        if (gltf_material.clearcoat_roughness_texture.has_value()) {
+            new_material.clearcoat_roughness_texture = gltf_material.clearcoat_roughness_texture.value();
+            new_material.clearcoat_roughness_texture.index += renderer->texture_count;
+        }
+        if (gltf_material.clearcoat_normal_texture.has_value()) {
+            new_material.clearcoat_normal_texture = gltf_material.clearcoat_normal_texture.value();
+            new_material.clearcoat_normal_texture.index += renderer->texture_count;
+        }
+        new_material.clearcoat_factor           = gltf_material.clearcoat_factor;
+        new_material.clearcoat_roughness_factor = gltf_material.clearcoat_roughness_factor;
+
         materials.push_back(new_material);
     }
 
@@ -1015,11 +1031,11 @@ void renderer_create(Renderer* renderer) {
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
     // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
-    // renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
-    renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
+    // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
 
     active_renderer = renderer;
 }
