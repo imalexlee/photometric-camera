@@ -1,5 +1,4 @@
 #include "renderer.h"
-#include "loader.h"
 
 #include <camera.h>
 #include <functional>
@@ -419,7 +418,7 @@ static void renderer_init_shader_data(Renderer* renderer) {
 
     // create default material
     TextureInfo default_texture_info{};
-    default_texture_info.index     = 0;
+    default_texture_info.tex_index = 0;
     default_texture_info.tex_coord = 0;
 
     Material default_material{};
@@ -520,7 +519,7 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
     gltf_load_options.gltf_path = gltf_path;
     gltf_load_options.cache_dir = "cache/";
 
-    GltfAsset asset = load_gltf(&gltf_load_options, renderer->vk_context.device, renderer->allocator, renderer->vk_context.frame_command_pool,
+    GltfAsset asset = load_gltf(&gltf_load_options, renderer->allocator, renderer->vk_context.device, renderer->vk_context.frame_command_pool,
                                 renderer->vk_context.graphics_queue, renderer->vk_context.queue_family);
 
     // add new draw objects
@@ -543,14 +542,30 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
             }
 
             if (gltf_primitive.index_buffer.has_value()) {
-                new_draw_object.index_buffer = gltf_primitive.index_buffer.value();
+                const GltfBuffer* gltf_buf = &gltf_primitive.index_buffer.value();
+                AllocatedBuffer   index_buf{};
+                index_buf.address         = gltf_buf->address;
+                index_buf.buffer          = gltf_buf->buffer;
+                index_buf.allocation      = gltf_buf->allocation;
+                index_buf.allocation_info = gltf_buf->allocation_info;
+
+                new_draw_object.index_buffer = index_buf;
             } else {
                 abort_message("currently not handling GLTF assets without index buffers");
             }
 
-            new_draw_object.index_count   = gltf_primitive.index_count;
-            new_draw_object.index_type    = gltf_primitive.index_type;
-            new_draw_object.vertex_buffer = gltf_primitive.vertex_buffer;
+            new_draw_object.index_count = gltf_primitive.index_count;
+            new_draw_object.index_type  = gltf_primitive.index_type;
+
+            const GltfBuffer* gltf_buf = &gltf_primitive.vertex_buffer;
+
+            AllocatedBuffer vertex_buf{};
+            vertex_buf.address         = gltf_buf->address;
+            vertex_buf.buffer          = gltf_buf->buffer;
+            vertex_buf.allocation      = gltf_buf->allocation;
+            vertex_buf.allocation_info = gltf_buf->allocation_info;
+
+            new_draw_object.vertex_buffer = vertex_buf;
 
             if (gltf_primitive.material.has_value()) {
                 // offset the material index by how many materials we already have from other gltf assets
@@ -579,47 +594,47 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
         // I will offset the texture indices by how many textures we already have from other gltf assets
         if (gltf_material.normal_texture.has_value()) {
             new_material.normal_texture = gltf_material.normal_texture.value();
-            new_material.normal_texture.index += renderer->texture_count;
+            new_material.normal_texture.tex_index += renderer->texture_count;
         }
         new_material.normal_scale = gltf_material.normal_scale;
 
         if (gltf_material.base_color_texture.has_value()) {
             new_material.base_color_texture = gltf_material.base_color_texture.value();
-            new_material.base_color_texture.index += renderer->texture_count;
+            new_material.base_color_texture.tex_index += renderer->texture_count;
         }
         new_material.base_color_factors = glm::make_vec4(gltf_material.base_color_factors);
 
         if (gltf_material.metallic_roughness_texture.has_value()) {
             new_material.metallic_roughness_texture = gltf_material.metallic_roughness_texture.value();
-            new_material.metallic_roughness_texture.index += renderer->texture_count;
+            new_material.metallic_roughness_texture.tex_index += renderer->texture_count;
         }
         new_material.metallic_factor  = gltf_material.metallic_factor;
         new_material.roughness_factor = gltf_material.roughness_factor;
 
         if (gltf_material.occlusion_texture.has_value()) {
             new_material.occlusion_texture = gltf_material.occlusion_texture.value();
-            new_material.occlusion_texture.index += renderer->texture_count;
+            new_material.occlusion_texture.tex_index += renderer->texture_count;
         }
         new_material.occlusion_strength = gltf_material.occlusion_strength;
 
         if (gltf_material.emissive_texture.has_value()) {
             new_material.emissive_texture = gltf_material.emissive_texture.value();
-            new_material.emissive_texture.index += renderer->texture_count;
+            new_material.emissive_texture.tex_index += renderer->texture_count;
         }
         new_material.emissive_factors = glm::make_vec3(gltf_material.emissive_factors);
 
         // EXTENSIONS
         if (gltf_material.clearcoat_texture.has_value()) {
             new_material.clearcoat_texture = gltf_material.clearcoat_texture.value();
-            new_material.clearcoat_texture.index += renderer->texture_count;
+            new_material.clearcoat_texture.tex_index += renderer->texture_count;
         }
         if (gltf_material.clearcoat_roughness_texture.has_value()) {
             new_material.clearcoat_roughness_texture = gltf_material.clearcoat_roughness_texture.value();
-            new_material.clearcoat_roughness_texture.index += renderer->texture_count;
+            new_material.clearcoat_roughness_texture.tex_index += renderer->texture_count;
         }
         if (gltf_material.clearcoat_normal_texture.has_value()) {
             new_material.clearcoat_normal_texture = gltf_material.clearcoat_normal_texture.value();
-            new_material.clearcoat_normal_texture.index += renderer->texture_count;
+            new_material.clearcoat_normal_texture.tex_index += renderer->texture_count;
         }
         new_material.clearcoat_factor           = gltf_material.clearcoat_factor;
         new_material.clearcoat_roughness_factor = gltf_material.clearcoat_roughness_factor;
@@ -636,14 +651,25 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
         Texture new_texture{};
 
         // it would be really weird for a gltf_texture to not have an image btw. handle it anyway
-        if (gltf_texture.image.has_value()) {
-            new_texture.image = asset.images[gltf_texture.image.value()];
+        if (gltf_texture.image_index.has_value()) {
+            const GltfImage* gltf_image = &asset.images[gltf_texture.image_index.value()];
+
+            AllocatedImage image{};
+            image.image           = gltf_image->image;
+            image.image_view      = gltf_image->image_view;
+            image.image_format    = gltf_image->image_format;
+            image.extent          = gltf_image->extent;
+            image.allocation      = gltf_image->allocation;
+            image.allocation_info = gltf_image->allocation_info;
+            image.layout          = gltf_image->layout;
+
+            new_texture.image = image;
         } else {
             new_texture.image = renderer->default_texture_image;
         }
 
-        if (gltf_texture.sampler.has_value()) {
-            new_texture.sampler = asset.samplers[gltf_texture.sampler.value()];
+        if (gltf_texture.sampler_index.has_value()) {
+            new_texture.sampler = asset.samplers[gltf_texture.sampler_index.value()];
         } else {
             new_texture.sampler = renderer->default_sampler;
         }
@@ -866,10 +892,9 @@ void renderer_draw(Renderer* renderer) {
     VkClearValue color_clear_value{};
     color_clear_value.color = {0.01, 0.01, 0.01, 0};
 
-    VkRenderingAttachmentInfo color_attachment_info =
-        vk_lib::rendering_attachment_info(renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                          VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE, &color_clear_value,
-                                          VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo color_attachment_info = vk_lib::rendering_attachment_info(
+        renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
+        VK_ATTACHMENT_STORE_OP_DONT_CARE, &color_clear_value, VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view);
 
     std::array color_attachment_infos = {color_attachment_info};
 
@@ -1036,6 +1061,7 @@ void renderer_create(Renderer* renderer) {
     // renderer_add_gltf_asset(renderer, "../assets/structure.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
     // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
+    // renderer_add_gltf_asset(renderer, "../assets/ClearCoatTest.glb");
 
     active_renderer = renderer;
 }

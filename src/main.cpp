@@ -1,6 +1,5 @@
 #include "common.h"
 
-#include "loader.h"
 #include "renderer.h"
 
 int main() {

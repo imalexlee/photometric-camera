@@ -30,8 +30,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-#include <cgltf.h>
-
 #define VK_CHECK(x)                                                                                                                                  \
     do {                                                                                                                                             \
         VkResult err = x;                                                                                                                            \

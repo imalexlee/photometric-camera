@@ -4,14 +4,23 @@ include(FetchContent)
 
 set(CMAKE_CXX_STANDARD 20)
 
+find_package(Vulkan REQUIRED)
+
 file(GLOB_RECURSE project_sources "src/*.cpp")
 add_executable(${CMAKE_PROJECT_NAME} ${project_sources})
 
 FetchContent_Declare(
+        vk-gltf
+        GIT_REPOSITORY https://github.com/imalexlee/vk-gltf.git
+        GIT_TAG 6a5a9a29755033290f47291ce803ad2a260633e1
+)
+
+FetchContent_Declare(
         vk-lib
         GIT_REPOSITORY https://github.com/imalexlee/vk-lib.git
-        GIT_TAG 9157dd90541a6f65e4f8c9a76e5575c7cb08d837
+        GIT_TAG 8d7030ee258442d974f3d9905f8a919b68726712
 )
+
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW docs" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests" FORCE)
@@ -21,27 +30,13 @@ FetchContent_Declare(
         URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
 )
 
-set(KTX_FEATURE_TESTS OFF CACHE BOOL "Disable KTX tests" FORCE)
-set(KTX_FEATURE_TOOLS OFF CACHE BOOL "Disable KTX tools" FORCE)
-set(KTX_FEATURE_TOOLS_CTS OFF CACHE BOOL "Disable KTX CTS tests" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
-FetchContent_Declare(
-        ktx
-        GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
-        GIT_TAG beef80159525d9fb7abb8645ea85f4c4f6842e8f
-        GIT_SUBMODULES ""
-)
-
 FetchContent_Declare(
         glm
         URL https://github.com/g-truc/glm/archive/refs/tags/1.0.1.zip
 )
 
-FetchContent_MakeAvailable(vk-lib)
-FetchContent_MakeAvailable(GLFW)
-FetchContent_MakeAvailable(ktx)
-FetchContent_MakeAvailable(glm)
+FetchContent_MakeAvailable(vk-lib vk-gltf GLFW glm)
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC vk-lib glfw ktx glm::glm)
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC vk-lib vk-gltf glfw glm::glm)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC src vendor)

@@ -1,11 +1,11 @@
 #pragma once
 #include "common.h"
 
-#include "loader.h"
 #include "window.h"
 #include <frame.h>
 #include <swapchain.h>
 #include <vk_context.h>
+#include <vk_gltf/loader.h>
 
 struct GraphicsPipeline {
     VkPipeline       pipeline{};

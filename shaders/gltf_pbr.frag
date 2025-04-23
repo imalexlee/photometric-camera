@@ -84,7 +84,45 @@ vec3 ACESFilm(vec3 x)
     float e = 0.14f;
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.f, 1.f);
 }
+float calculateShadow(vec4 shadow_coords, float n_dot_l, float bias) {
+    // Early return if surface is facing away from light
+    if (n_dot_l <= 0.0) {
+        return 0.0;
+    }
 
+    // Apply normal offset to avoid shadow acne
+    shadow_coords = shadow_coords / shadow_coords.w + vec4(vert_normal * 0.0001, 0);
+
+    const int radius = 20;
+    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
+    float shadow = 0.0;
+
+    // Horizontal pass - accumulate in temp array
+    float tempSamples[radius * 2 + 1];// Adjust size based on radius
+    for (int x = 0; x < radius * 2 + 1; x++) {
+        tempSamples[x] = 0.0;
+        float xOffset = (x - radius) * texelSize;
+
+        // Vertical sampling for this x position
+        for (int y = -radius; y <= radius; y++) {
+            float yOffset = y * texelSize;
+            vec2 offset = vec2(xOffset, yOffset);
+
+            float shadowMapDepth = texture(shadow_map, shadow_coords.xy + offset).r;
+            tempSamples[x] += (shadowMapDepth < shadow_coords.z + bias) ? 1.0 : 0.0;
+        }
+    }
+
+    // Combine horizontal results
+    for (int i = 0; i < radius * 2 + 1; i++) {
+        shadow += tempSamples[i];
+    }
+
+    // Normalize result
+    shadow /= pow(radius * 2 + 1, 2);
+
+    return shadow;
+}
 void main() {
     Material mat = material_buf.materials[nonuniformEXT (constants.material_index)];
 
@@ -158,20 +196,18 @@ void main() {
     int radius = 4;
     float shadow = pow(radius * 2 + 1, 2);
 
-    // only do expensive shadow filtering for geometry facing the light
-    if (n_dot_l > 0.0){
-        float texelSize = 1.0 / textureSize(shadow_map, 0).x;
-        vec4 shadow_coords = vert_light_pos / vert_light_pos.w + vec4(normal * 0.0001, 0);
-        for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
-                vec2 offset = vec2(x, y) * texelSize;
-                if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0005){
-                    shadow -= 1;
-                }
+    // PCF shadows
+    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
+    vec4 shadow_coords = vert_light_pos / vert_light_pos.w + vec4(normal * 0.0001, 0);
+    for (int x = -radius; x <= radius; x++) {
+        for (int y = -radius; y <= radius; y++) {
+            vec2 offset = vec2(x, y) * texelSize;
+            if (texture(shadow_map, shadow_coords.xy + offset).r > shadow_coords.z + 0.0005){
+                shadow -= 1;
             }
         }
-        shadow /= pow(radius * 2 + 1, 2);
     }
+    shadow /= pow(radius * 2 + 1, 2);
 
     vec3 final_color = (direct_lighting * shadow) + ambient_contribution + emissive;
     final_color = ACESFilm(final_color);
