@@ -77,16 +77,21 @@ vec3 ACESFilm(vec3 x)
 void main() {
     Material mat = material_buf.materials[nonuniformEXT (constants.material_index)];
 
-    vec3 tex_normal = (texture(tex_samplers[nonuniformEXT (mat.normal_texture.index)], normal_uv).xyz * vec3(2.f) - vec3(1.f)) * vec3(mat.normal_scale);
+    vec3 tex_normal = texture(tex_samplers[nonuniformEXT (mat.normal_texture.index)], normal_uv).xyz;
+    tex_normal = tex_normal* 2.f - 1.f;
+    tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
+    tex_normal = normalize(tex_normal);
+
     vec4 tex_color = texture(tex_samplers[nonuniformEXT (mat.base_color_texture.index)], color_uv).rgba;
 
 
     // until i can find a branchless option, simply don't apply normal mapping if the tex_normal == vec(1)
     // since this means we read the default texture. aka, there is no normal map.
-    if(tex_normal == vec3(1)){
-        vec3 bitangent = cross(vert_normal, tangent) * v.tangent.w.
-        mat3 TBN = mat3(vert_tangent, bitangent, vert_normal);
-        vec3 normal = normalize(TBN * tex_normal);
+    vec3 normal = vert_normal;
+    if (tex_normal != vec3(1)){
+        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
+        mat3 TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
+        normal = normalize(TBN * tex_normal);
     }
 
     float occlusion = 1.f + mat.occlusion_strength * (texture(tex_samplers[nonuniformEXT (mat.occlusion_texture.index)], occlusion_uv).r - 1.f);
@@ -118,7 +123,7 @@ void main() {
     float n_dot_l = max(dot(normal, light_dir), 0.0);
     vec3 direct_lighting = material * lightColor * light_intensity * n_dot_l;
 
-    vec3 ambient_color = vec3(0.01) * light_intensity;
+    vec3 ambient_color = vec3(0.015) * light_intensity;
 
     vec3 ambient_contribution = albedo.rgb * ambient_color * occlusion;
 
@@ -144,4 +149,5 @@ void main() {
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
+    //    out_color = vec4(vec3(shadow), 1);
 }

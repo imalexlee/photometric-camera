@@ -26,7 +26,7 @@ void main() {
 
     vert_color = v.color;
     vert_tangent = v.tangent;
-    vert_normal = mat3(constants.model_transform) * v.normal.xyz;
+    vert_normal = normalize(mat3(constants.model_transform) * v.normal.xyz);
 
 
     gl_Position = scene_data.proj * scene_data.view * vert_position;
