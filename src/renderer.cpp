@@ -133,16 +133,18 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     VkPipelineLayout shadow_map_pipeline_layout;
     VK_CHECK(vkCreatePipelineLayout(device, &shadow_map_layout_create_info, nullptr, &shadow_map_pipeline_layout));
 
-    VkPipelineMultisampleStateCreateInfo   shadow_map_multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_1_BIT);
-    VkPipelineColorBlendStateCreateInfo    shadow_map_color_blend_state = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
-    VkPipelineRenderingCreateInfoKHR       shadow_map_rendering_ci      = vk_lib::pipeline_rendering_create_info({}, VK_FORMAT_D32_SFLOAT);
+    VkPipelineMultisampleStateCreateInfo  shadow_map_multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_1_BIT);
+    VkPipelineColorBlendStateCreateInfo   shadow_map_color_blend_state = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
+    VkPipelineRenderingCreateInfoKHR      shadow_map_rendering_ci      = vk_lib::pipeline_rendering_create_info({}, VK_FORMAT_D32_SFLOAT);
+    VkPipelineDepthStencilStateCreateInfo shadow_map_depth_stencil_state =
+        vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_LESS);
     VkPipelineRasterizationStateCreateInfo shadow_map_rasterization_state =
         vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_CULL_MODE_NONE);
 
     VkGraphicsPipelineCreateInfo shadow_map_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         shadow_map_pipeline_layout, nullptr, shadow_map_shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state,
-        &shadow_map_rasterization_state, &shadow_map_multisample_state, &shadow_map_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr,
-        0, 0, nullptr, 0, &shadow_map_rendering_ci);
+        &shadow_map_rasterization_state, &shadow_map_multisample_state, &shadow_map_color_blend_state, &shadow_map_depth_stencil_state,
+        &dynamic_state, nullptr, 0, 0, nullptr, 0, &shadow_map_rendering_ci);
 
     VkPipeline shadow_map_pipeline;
     VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &shadow_map_graphics_pipeline_ci, nullptr, &shadow_map_pipeline));
@@ -248,7 +250,7 @@ static void renderer_create_shadow_map(Renderer* renderer) {
     VmaAllocationCreateInfo allocation_ci{};
     allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    renderer->shadow_map_extent = vk_lib::extent_3d(2048, 2048);
+    renderer->shadow_map_extent = vk_lib::extent_3d(4096, 4096);
 
     VkImageCreateInfo shadow_map_image_ci = vk_lib::image_create_info(
         VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, renderer->shadow_map_extent);
@@ -711,18 +713,13 @@ static void renderer_set_main_pass_scene_data(Renderer* renderer, uint32_t frame
 static void renderer_set_shadow_pass_scene_data(Renderer* renderer, uint32_t frame_index) {
 
     SceneData scene_data{};
-    glm::vec3 light_pos = glm::vec3(2, 4.5, 1) * 4;
-    float     bounds    = 30;
-    scene_data.proj     = glm::ortho(-bounds, bounds, -bounds, bounds, 100.f, 0.0001f);
-
-    scene_data.eye_pos = light_pos;
-    scene_data.view    = glm::lookAt(light_pos, glm::vec3(0), glm::vec3(0, 1, 0));
-
-    renderer->light_transform = scene_data.proj * scene_data.view;
+    float     bounds          = 20;
+    glm::vec3 light_pos       = glm::vec3(2, 4.5, 1) * 4;
     scene_data.sun_dir        = glm::normalize(light_pos);
-
-    renderer->sun_dir = scene_data.sun_dir;
-
+    scene_data.view           = glm::lookAt(light_pos, glm::vec3(0), glm::vec3(0, 1, 0));
+    scene_data.proj           = glm::ortho(-bounds, bounds, -bounds, bounds, 0.0001f, 100.f);
+    renderer->light_transform = scene_data.proj * scene_data.view;
+    renderer->sun_dir         = glm::normalize(light_pos);
     VK_CHECK(vmaCopyMemoryToAllocation(renderer->allocator, &scene_data, renderer->shadow_scene_data_buffers[frame_index].allocation, 0,
                                        sizeof(SceneData)));
 
@@ -796,12 +793,12 @@ void renderer_draw(Renderer* renderer) {
     VkDependencyInfo shadow_map_dependency_info = vk_lib::dependency_info(&shadow_map_clear_image_memory_barrier, nullptr, nullptr);
     vkCmdPipelineBarrier2(command_buffer, &shadow_map_dependency_info);
 
-    VkClearValue depth_clear_value{};
-    depth_clear_value.color = {0, 0, 0, 0};
+    VkClearValue shadow_depth_clear_value{};
+    shadow_depth_clear_value.color = {1, 1, 1, 1};
 
     VkRenderingAttachmentInfo shadow_map_attachment_info =
         vk_lib::rendering_attachment_info(renderer->shadow_map_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                                          VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, &depth_clear_value);
+                                          VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, &shadow_depth_clear_value);
 
     const VkRect2D           shadow_map_render_area    = vk_lib::rect_2d(shadow_map_extent_2d);
     const VkRenderingInfoKHR shadow_map_rendering_info = vk_lib::rendering_info(shadow_map_render_area, {}, &shadow_map_attachment_info);
@@ -890,7 +887,9 @@ void renderer_draw(Renderer* renderer) {
     vkCmdPipelineBarrier2(command_buffer, &draw_dependency_info);
 
     VkClearValue color_clear_value{};
-    color_clear_value.color = {0.01, 0.01, 0.01, 0};
+    // color_clear_value.color = {0.01, 0.01, 0.01, 0};
+    // sky blue
+    color_clear_value.color = {0.53, 0.81, 0.92, 0};
 
     VkRenderingAttachmentInfo color_attachment_info = vk_lib::rendering_attachment_info(
         renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -898,6 +897,8 @@ void renderer_draw(Renderer* renderer) {
 
     std::array color_attachment_infos = {color_attachment_info};
 
+    VkClearValue depth_clear_value{};
+    depth_clear_value.color = {0, 0, 0, 0};
     VkRenderingAttachmentInfo depth_attachment_info =
         vk_lib::rendering_attachment_info(renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
                                           VK_ATTACHMENT_STORE_OP_DONT_CARE, &depth_clear_value);
