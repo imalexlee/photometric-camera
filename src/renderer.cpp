@@ -75,15 +75,16 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
         vk_lib::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     VkPipelineViewportStateCreateInfo      viewport_state = vk_lib::pipeline_viewport_state_create_info(nullptr, nullptr);
     VkPipelineRasterizationStateCreateInfo rasterization_state =
-        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_CLOCKWISE, VK_CULL_MODE_BACK_BIT, true, 0, -5);
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_CLOCKWISE, VK_CULL_MODE_BACK_BIT);
     VkPipelineMultisampleStateCreateInfo  multisample_state                   = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
     VkPipelineColorBlendAttachmentState   opaque_color_blend_attachment_state = vk_lib::pipeline_color_blend_attachment_state();
     std::array                            opaque_color_blends                 = {opaque_color_blend_attachment_state};
     VkPipelineColorBlendStateCreateInfo   opaque_color_blend_state            = vk_lib::pipeline_color_blend_state_create_info(opaque_color_blends);
-    VkPipelineDepthStencilStateCreateInfo depth_stencil_state = vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER);
-    std::array                            dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_FRONT_FACE};
-    VkPipelineDynamicStateCreateInfo      dynamic_state       = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
-    VkGraphicsPipelineCreateInfo          opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state =
+        vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+    std::array                       dynamic_state_types         = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_FRONT_FACE};
+    VkPipelineDynamicStateCreateInfo dynamic_state               = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
+    VkGraphicsPipelineCreateInfo     opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         pipeline_layout, nullptr, shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state, &rasterization_state,
         &multisample_state, &opaque_color_blend_state, &depth_stencil_state, &dynamic_state, nullptr, 0, 0, nullptr, 0, &rendering_create_info);
 
@@ -139,7 +140,7 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     VkPipelineDepthStencilStateCreateInfo shadow_map_depth_stencil_state =
         vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_LESS);
     VkPipelineRasterizationStateCreateInfo shadow_map_rasterization_state =
-        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_CULL_MODE_NONE);
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_CULL_MODE_FRONT_BIT);
 
     VkGraphicsPipelineCreateInfo shadow_map_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         shadow_map_pipeline_layout, nullptr, shadow_map_shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state,
@@ -155,6 +156,48 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     shadow_map_graphics_pipeline.vert_shader     = shadow_vert_shader;
 
     renderer->shadow_map_graphics_pipeline = shadow_map_graphics_pipeline;
+
+    // create depth pre-pass pipeline
+
+    // todo: make shader
+    VkShaderModule                  depth_pre_vert_shader = load_shader(device, "../shaders/shadow_map_gen.vert.spv");
+    VkPipelineShaderStageCreateInfo depth_pre_shader_stage =
+        vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, depth_pre_vert_shader);
+    std::array depth_pre_shader_stages = {depth_pre_shader_stage};
+
+    // todo: see if i can reuse shadow desc set layout
+    std::array          depth_pre_set_layouts          = {renderer->shadow_descriptor_set_layout};
+    VkPushConstantRange depth_pre_push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstants));
+    std::array          depth_pre_push_constant_ranges = {depth_pre_push_constant_range};
+
+    VkPipelineLayoutCreateInfo depth_pre_layout_create_info =
+        vk_lib::pipeline_layout_create_info(depth_pre_set_layouts, depth_pre_push_constant_ranges);
+
+    VkPipelineLayout depth_pre_pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(device, &depth_pre_layout_create_info, nullptr, &depth_pre_pipeline_layout));
+
+    VkPipelineMultisampleStateCreateInfo  depth_pre_multisample_state = vk_lib::pipeline_multisample_state_create_info(VK_SAMPLE_COUNT_4_BIT);
+    VkPipelineColorBlendStateCreateInfo   depth_pre_color_blend_state = vk_lib::pipeline_color_blend_state_create_info({}); // no color blends
+    VkPipelineRenderingCreateInfoKHR      depth_pre_rendering_ci      = vk_lib::pipeline_rendering_create_info({}, VK_FORMAT_D32_SFLOAT);
+    VkPipelineDepthStencilStateCreateInfo depth_pre_depth_stencil_state =
+        vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER);
+    VkPipelineRasterizationStateCreateInfo depth_pre_rasterization_state =
+        vk_lib::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_CULL_MODE_BACK_BIT);
+
+    VkGraphicsPipelineCreateInfo depth_pre_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
+        depth_pre_pipeline_layout, nullptr, depth_pre_shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state,
+        &depth_pre_rasterization_state, &depth_pre_multisample_state, &depth_pre_color_blend_state, &depth_pre_depth_stencil_state, &dynamic_state,
+        nullptr, 0, 0, nullptr, 0, &depth_pre_rendering_ci);
+
+    VkPipeline depth_pre_pipeline;
+    VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &depth_pre_graphics_pipeline_ci, nullptr, &depth_pre_pipeline));
+
+    GraphicsPipeline depth_pre_graphics_pipeline{};
+    depth_pre_graphics_pipeline.pipeline        = depth_pre_pipeline;
+    depth_pre_graphics_pipeline.pipeline_layout = depth_pre_pipeline_layout;
+    depth_pre_graphics_pipeline.vert_shader     = depth_pre_vert_shader;
+
+    renderer->depth_pre_graphics_pipeline = depth_pre_graphics_pipeline;
 }
 
 static void vma_allocation_callback(VmaAllocator allocator, uint32_t memoryType, VkDeviceMemory memory, VkDeviceSize size, void* pUserData) {
@@ -779,6 +822,12 @@ void renderer_draw(Renderer* renderer) {
         return;
     }
 
+    VkImage     swapchain_image      = swapchain_ctx->images[swapchain_image_index];
+    VkImageView swapchain_image_view = swapchain_ctx->image_views[swapchain_image_index];
+
+    const VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT);
+    const VkImageSubresourceRange color_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+
     VK_CHECK(vkResetCommandBuffer(command_buffer, 0));
 
     VkCommandBufferBeginInfo begin_info = vk_lib::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
@@ -794,14 +843,12 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdSetScissor(command_buffer, 0, 1, &shadow_map_scissor);
 
-    const VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT);
-
     const VkImageMemoryBarrier2 shadow_map_clear_image_memory_barrier = vk_lib::image_memory_barrier_2(
         renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
 
-    VkDependencyInfo shadow_map_dependency_info = vk_lib::dependency_info(&shadow_map_clear_image_memory_barrier, nullptr, nullptr);
-    vkCmdPipelineBarrier2(command_buffer, &shadow_map_dependency_info);
+    VkDependencyInfo depth_only_dependency_info = vk_lib::dependency_info(&shadow_map_clear_image_memory_barrier, nullptr, nullptr);
+    vkCmdPipelineBarrier2(command_buffer, &depth_only_dependency_info);
 
     VkClearValue shadow_depth_clear_value{};
     shadow_depth_clear_value.color = {1, 1, 1, 1};
@@ -841,10 +888,19 @@ void renderer_draw(Renderer* renderer) {
 
     const VkImageMemoryBarrier2 shadow_map_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
         renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 
-    shadow_map_dependency_info = vk_lib::dependency_info(&shadow_map_write_image_memory_barrier, nullptr, nullptr);
-    vkCmdPipelineBarrier2(command_buffer, &shadow_map_dependency_info);
+    const VkImageMemoryBarrier2 depth_pre_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+        VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT);
+
+    std::array depth_only_memory_barriers = {shadow_map_write_image_memory_barrier, depth_pre_image_memory_barrier};
+
+    depth_only_dependency_info = vk_lib::dependency_info_batch(depth_only_memory_barriers, {}, {});
+
+    vkCmdPipelineBarrier2(command_buffer, &depth_only_dependency_info);
 
     const VkViewport viewport = vk_lib::viewport(static_cast<float>(swapchain_ctx->extent.width), static_cast<float>(swapchain_ctx->extent.height));
     const VkRect2D   scissor  = vk_lib::rect_2d(swapchain_ctx->extent);
@@ -853,30 +909,64 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-    const VkImageSubresourceRange color_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+    VkClearValue depth_clear_value{};
+    depth_clear_value.color = {0, 0, 0, 0};
+    VkRenderingAttachmentInfo depth_pre_attachment_info =
+        vk_lib::rendering_attachment_info(renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                          VK_ATTACHMENT_STORE_OP_STORE, &depth_clear_value);
+    const VkRect2D render_area = vk_lib::rect_2d(swapchain_ctx->extent);
+    // TODO: depth pre pass on opaque objects
+    const VkRenderingInfoKHR depth_pre_rendering_info = vk_lib::rendering_info(render_area, {}, &depth_pre_attachment_info);
+    vkCmdBeginRenderingKHR(command_buffer, &depth_pre_rendering_info);
+
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->depth_pre_graphics_pipeline.pipeline);
+
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->depth_pre_graphics_pipeline.pipeline_layout, 0, 1,
+                            &renderer->scene_descriptor_sets[frame_index], 0, nullptr);
+    for (const DrawObject& opaque_draw : renderer->opaque_draws) {
+        PushConstants push_constants{};
+        push_constants.model_transform    = opaque_draw.transform;
+        push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
+        push_constants.material_index     = opaque_draw.material_index;
+
+        vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
+
+        vkCmdPushConstants(command_buffer, renderer->depth_pre_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(PushConstants), &push_constants);
+
+        vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
+        vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
+    }
+
+    vkCmdEndRendering(command_buffer);
+
+    const VkImageMemoryBarrier2 depth_pre_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    // VkDependencyInfo depth_pre_write_dependency_info = vk_lib::dependency_info(&depth_pre_write_image_memory_barrier, nullptr, nullptr);
 
     const VkImageMemoryBarrier2 msaa_draw_image_memory_barrier =
         vk_lib::image_memory_barrier_2(renderer->msaa_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    const VkImageMemoryBarrier2 depth_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
-        VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT);
-
-    VkImage     swapchain_image      = swapchain_ctx->images[swapchain_image_index];
-    VkImageView swapchain_image_view = swapchain_ctx->image_views[swapchain_image_index];
-
     const VkImageMemoryBarrier2 resolve_draw_image_memory_barrier =
         vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, depth_image_memory_barrier};
+    std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, depth_pre_write_image_memory_barrier};
 
     const VkDependencyInfo draw_dependency_info = vk_lib::dependency_info_batch(draw_image_memory_barriers, {}, {});
+
     vkCmdPipelineBarrier2(command_buffer, &draw_dependency_info);
+
+    VkRenderingAttachmentInfo depth_attachment_info = vk_lib::rendering_attachment_info(
+        renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+
+    // main pass
 
     VkClearValue color_clear_value{};
     // color_clear_value.color = {0.01, 0.01, 0.01, 0};
@@ -889,13 +979,6 @@ void renderer_draw(Renderer* renderer) {
 
     std::array color_attachment_infos = {color_attachment_info};
 
-    VkClearValue depth_clear_value{};
-    depth_clear_value.color = {0, 0, 0, 0};
-    VkRenderingAttachmentInfo depth_attachment_info =
-        vk_lib::rendering_attachment_info(renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                          VK_ATTACHMENT_STORE_OP_DONT_CARE, &depth_clear_value);
-
-    const VkRect2D           render_area    = vk_lib::rect_2d(swapchain_ctx->extent);
     const VkRenderingInfoKHR rendering_info = vk_lib::rendering_info(render_area, color_attachment_infos, &depth_attachment_info);
 
     vkCmdBeginRenderingKHR(command_buffer, &rendering_info);
@@ -1003,6 +1086,8 @@ void renderer_recompile_pipelines(Renderer* renderer) {
     if (renderer->shadow_map_graphics_pipeline.vert_shader) {
         vkDestroyShaderModule(device, renderer->shadow_map_graphics_pipeline.vert_shader, nullptr);
     }
+
+    // TODO: destroy depth pre pass resources
 
     renderer_create_graphics_pipeline(renderer, renderer->swapchain_context.surface_format.format);
 }

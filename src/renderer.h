@@ -79,6 +79,7 @@ struct Renderer {
     GraphicsPipeline             opaque_graphics_pipeline{};
     GraphicsPipeline             transparent_graphics_pipeline{};
     GraphicsPipeline             shadow_map_graphics_pipeline{};
+    GraphicsPipeline             depth_pre_graphics_pipeline{};
     VmaAllocator                 allocator{};
     AllocatedImage               msaa_color_image{};
     AllocatedImage               depth_image{};
