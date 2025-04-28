@@ -3,7 +3,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set GLSLC_PATH=C:\VulkanSDK\1.3.290.0\Bin\glslc.exe
+set GLSLC_PATH=C:\VulkanSDK\1.3.290.0\Bin\glslangValidator.exe
 
 echo Vulkan Shader Compiler Batch Script
 echo -----------------------------------
@@ -29,7 +29,7 @@ set ERROR_COUNT=0
 :: Compile all vertex shaders
 for %%f in (*.vert) do (
     echo Compiling vertex shader: %%f
-    "%GLSLC_PATH%" "%%f" -o "%%f.spv"
+    "%GLSLC_PATH%" -V "%%f" -o "%%f.spv" -gVS
     if !errorlevel! neq 0 (
         echo Error compiling %%f
         set /a ERROR_COUNT+=1
@@ -43,7 +43,7 @@ for %%f in (*.vert) do (
 :: Compile all fragment shaders
 for %%f in (*.frag) do (
     echo Compiling fragment shader: %%f
-    "%GLSLC_PATH%" "%%f" -o "%%f.spv"
+    "%GLSLC_PATH%" -V "%%f" -o "%%f.spv" -gVS
     if !errorlevel! neq 0 (
         echo Error compiling %%f
         set /a ERROR_COUNT+=1
@@ -57,7 +57,7 @@ for %%f in (*.frag) do (
 :: Compile all compute shaders
 for %%f in (*.comp) do (
     echo Compiling compute shader: %%f
-    "%GLSLC_PATH%" "%%f" -o "%%f.spv"
+    "%GLSLC_PATH%" -V "%%f" -o "%%f.spv" -gVS
     if !errorlevel! neq 0 (
         echo Error compiling %%f
         set /a ERROR_COUNT+=1

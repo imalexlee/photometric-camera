@@ -1,4 +1,5 @@
 #version 450
+#extension GL_ARB_shading_language_include: enable
 #include "common.glsl"
 
 layout (location = 0) in vec4 vert_position;
@@ -84,44 +85,27 @@ vec3 ACESFilm(vec3 x)
     float e = 0.14f;
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.f, 1.f);
 }
-float calculateShadow(vec4 shadow_coords, float n_dot_l, float bias) {
-    // Early return if surface is facing away from light
-    if (n_dot_l <= 0.0) {
-        return 0.0;
-    }
 
-    // Apply normal offset to avoid shadow acne
-    shadow_coords = shadow_coords / shadow_coords.w + vec4(vert_normal * 0.0001, 0);
+float compute_EV100(float aperture, float shutterTime, float ISO) {
+    // EV number is defined as :
+    // 2^ EV_s = N ^2 / t and EV_s = EV_100 + log2 ( S /100)
+    // This gives
+    // EV_s = log2 ( N ^2 / t )
+    // EV_100 + log2 ( S /100) = log2 ( N ^2 / t )
+    // EV_100 = log2 ( N ^2 / t ) - log2 ( S /100)
+    // EV_100 = log2 ( N ^2 / t . 100 / S )
+    return log2(sqrt(aperture) / shutterTime * 100 / ISO);
+}
 
-    const int radius = 20;
-    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
-    float shadow = 0.0;
-
-    // Horizontal pass - accumulate in temp array
-    float tempSamples[radius * 2 + 1];// Adjust size based on radius
-    for (int x = 0; x < radius * 2 + 1; x++) {
-        tempSamples[x] = 0.0;
-        float xOffset = (x - radius) * texelSize;
-
-        // Vertical sampling for this x position
-        for (int y = -radius; y <= radius; y++) {
-            float yOffset = y * texelSize;
-            vec2 offset = vec2(xOffset, yOffset);
-
-            float shadowMapDepth = texture(shadow_map, shadow_coords.xy + offset).r;
-            tempSamples[x] += (shadowMapDepth < shadow_coords.z + bias) ? 1.0 : 0.0;
-        }
-    }
-
-    // Combine horizontal results
-    for (int i = 0; i < radius * 2 + 1; i++) {
-        shadow += tempSamples[i];
-    }
-
-    // Normalize result
-    shadow /= pow(radius * 2 + 1, 2);
-
-    return shadow;
+float convert_EV100_to_exposure(float EV100) {
+    // Compute the maximum luminance possible with H_sbs sensitivity
+    // maxLum = 78 / ( S * q ) * N ^2 / t
+    // = 78 / ( S * q ) * 2^ EV_100
+    // = 78 / (100 * 0.65) * 2^ EV_100
+    // = 1.2 * 2^ EV
+    // Reference : http :// en . wikipedia . org / wiki / Film_speed
+    float max_luminance = 1.2f * pow(2.f, EV100);
+    return 1.f / max_luminance;
 }
 void main() {
     Material mat = material_buf.materials[nonuniformEXT (constants.material_index)];
@@ -131,6 +115,7 @@ void main() {
 
     vec3 normal = vert_normal;
 
+
     // until i can find a branchless option, simply don't apply normal mapping if the tex_normal == vec(1)
     // since this means we read the default texture. aka, there is no normal map.
     mat3 TBN;
@@ -138,10 +123,11 @@ void main() {
         tex_normal = tex_normal* 2.f - 1.f;
         tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
         tex_normal = normalize(tex_normal);
-        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
+        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * -vert_tangent.w;
         TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
         normal = normalize(TBN * tex_normal);
     }
+
 
     float occlusion = 1.f + mat.occlusion_strength * (texture(tex_samplers[nonuniformEXT (mat.occlusion_texture.index)], occlusion_uv).r - 1.f);
     vec3 emissive = texture(tex_samplers[nonuniformEXT (mat.emissive_texture.index)], emissive_uv).rgb * mat.emissive_factors;
@@ -154,6 +140,8 @@ void main() {
     vec3 view_dir = normalize(scene_data.eye_pos - vec3(vert_position));
     vec3 light_dir = scene_data.sun_dir;
 
+    light_dir       = normalize(vec3(2, 4.5, 1));
+
     vec3 halfway_dir = normalize(light_dir + view_dir);
 
     vec4 albedo = mat.base_color_factors * tex_color;
@@ -164,9 +152,12 @@ void main() {
     vec3 metal_brdf = conductor_fresnel(specular_brdf_val, albedo.rgb, view_dir, halfway_dir);
     vec3 dielectric_brdf = fresnel_mix(diffuse_brdf, specular_brdf_val, view_dir, halfway_dir);
 
+    //    out_color = vec4(vec3(metallic), 1);
+    //    return;
     vec3 material = mix(dielectric_brdf, metal_brdf, metallic);
 
     float n_dot_l = max(dot(normal, light_dir), 0.0);
+
 
     float clearcoat = texture(tex_samplers[nonuniformEXT (mat.clearcoat_texture.index)], clearcoat_uv).r * mat.clearcoat_factor;
     if (clearcoat != 0){
@@ -182,20 +173,36 @@ void main() {
 
         float clearcoat_brdf = specular_brdf(clearcoat_normal, halfway_dir, light_dir, view_dir, roughness);
         material = fresnel_coat(material, vec3(clearcoat_brdf), clearcoat, view_dir, halfway_dir);
+
     }
 
-    vec3 lightColor = vec3(1.0, 1.0, 1.0);
-    float light_intensity = 10;
+    // MANUAL EXPOSURE
+    float aperature = 8;
+    float shutter_time = 1 / 125.f;
+    float iso = 100;
 
-    vec3 direct_lighting = material * lightColor * light_intensity * n_dot_l;
+    float EV100 = compute_EV100(aperature, shutter_time, iso);
+    float exposure = convert_EV100_to_exposure(EV100);
 
-    vec3 ambient_color = vec3(0.015) * light_intensity;
+    // sun
+    vec3 sun_color = vec3(0.99, 0.98, 0.95);
+    vec3 illuminance = sun_color * 5326;// sun lux
 
-    vec3 ambient_contribution = albedo.rgb * ambient_color * occlusion;
+
+    vec3 direct_luminance = material * illuminance * exposure * n_dot_l;
+
+    float ambient_ratio = 0.05;
+    vec3 ambient_illuminance = illuminance * ambient_ratio;// typically much lower than direct illuminance
+
+    //    light_dir_factor = 1;
+    vec3 ambient_contribution = ambient_illuminance * exposure * albedo.rgb * occlusion;
+    float up_factor = max((dot(normal, vec3(0, 1, 0)) + 1.f) * 0.5f, 0.2);
+    ambient_contribution *= up_factor;
 
     // PCF shadows
-    int radius = 4;
-    float shadow = pow(radius * 2 + 1, 2);
+    int radius = 3;
+    float shaow_texel_count = pow(radius * 2 + 1, 2);
+    float shadow = shaow_texel_count;
     float texelSize = 1.0 / textureSize(shadow_map, 0).x;
     vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
     for (int x = -radius; x <= radius; x++) {
@@ -206,11 +213,11 @@ void main() {
             }
         }
     }
-    shadow /= pow(radius * 2 + 1, 2);
+    shadow /= shaow_texel_count;
 
-
-    vec3 final_color = (direct_lighting * shadow) + ambient_contribution + emissive;
+    vec3 final_color = (direct_luminance * shadow) + ambient_contribution + emissive;
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
+    //    out_color = vec4(vec3(ambient_contribution), albedo.a);
 }

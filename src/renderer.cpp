@@ -157,6 +157,12 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     renderer->shadow_map_graphics_pipeline = shadow_map_graphics_pipeline;
 }
 
+static void vma_allocation_callback(VmaAllocator allocator, uint32_t memoryType, VkDeviceMemory memory, VkDeviceSize size, void* pUserData) {
+    if (size > 250'000'000) {
+        std::cout << "Just allocated large memory chunk of size: " << size << std::endl;
+    }
+}
+
 static VmaAllocator allocator_create(const VkContext* vk_context) {
     // since I'm using volk, have to specify function pointers for vma
     VmaVulkanFunctions vma_vulkan_functions{};
@@ -194,6 +200,9 @@ static VmaAllocator allocator_create(const VkContext* vk_context) {
     allocator_create_info.instance               = vk_context->instance;
     allocator_create_info.pVulkanFunctions       = &vma_vulkan_functions;
     allocator_create_info.flags                  = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    VmaDeviceMemoryCallbacks vma_device_memory_callbacks{};
+    vma_device_memory_callbacks.pfnAllocate      = &vma_allocation_callback;
+    allocator_create_info.pDeviceMemoryCallbacks = &vma_device_memory_callbacks;
 
     VmaAllocator allocator;
     VK_CHECK(vmaCreateAllocator(&allocator_create_info, &allocator));
@@ -349,7 +358,7 @@ static void renderer_add_textures(Renderer* renderer, std::span<Texture> texture
 static void renderer_init_shader_data(Renderer* renderer) {
     const VkContext* vk_ctx = &renderer->vk_context;
 
-    constexpr uint32_t variable_texture_count = 5000;
+    constexpr uint32_t variable_texture_count = 100;
 
     VkDescriptorPoolSize       shadow_scene_data_pool_size   = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
     VkDescriptorPoolSize       scene_data_pool_size          = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
@@ -518,11 +527,12 @@ static void renderer_init_shader_data(Renderer* renderer) {
 
 void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
     LoadOptions gltf_load_options{};
-    gltf_load_options.gltf_path = gltf_path;
-    gltf_load_options.cache_dir = "cache/";
+    gltf_load_options.gltf_path      = gltf_path;
+    gltf_load_options.cache_dir      = "cache/";
+    gltf_load_options.create_mipmaps = true;
 
     GltfAsset asset = load_gltf(&gltf_load_options, renderer->allocator, renderer->vk_context.device, renderer->vk_context.frame_command_pool,
-                                renderer->vk_context.graphics_queue, renderer->vk_context.queue_family);
+                                renderer->vk_context.graphics_queue);
 
     // add new draw objects
     for (const GltfNode& node : asset.nodes) {
@@ -713,8 +723,8 @@ static void renderer_set_main_pass_scene_data(Renderer* renderer, uint32_t frame
 static void renderer_set_shadow_pass_scene_data(Renderer* renderer, uint32_t frame_index) {
 
     SceneData scene_data{};
-    float     bounds          = 20;
-    glm::vec3 light_pos       = glm::vec3(2, 4.5, 1) * 4;
+    float     bounds          = 30;
+    glm::vec3 light_pos       = glm::vec3(2, 4.5, 1) * 5;
     scene_data.sun_dir        = glm::normalize(light_pos);
     scene_data.view           = glm::lookAt(light_pos, glm::vec3(0), glm::vec3(0, 1, 0));
     scene_data.proj           = glm::ortho(-bounds, bounds, -bounds, bounds, 0.0001f, 100.f);
@@ -805,14 +815,11 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdBeginRenderingKHR(command_buffer, &shadow_map_rendering_info);
 
-    // vkCmdSetDepthBias(command_buffer, -0.5f, 0.0f, -0.5f);
-
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->shadow_map_graphics_pipeline.pipeline);
 
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->shadow_map_graphics_pipeline.pipeline_layout, 0, 1,
                             &renderer->shadow_descriptor_sets[frame_index], 0, nullptr);
 
-    VkDeviceSize vertex_offset = 0;
     for (const DrawObject& opaque_draw : renderer->opaque_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
@@ -826,21 +833,6 @@ void renderer_draw(Renderer* renderer) {
 
         vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
         vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
-    }
-
-    for (const DrawObject& transparent_draw : renderer->transparent_draws) {
-        PushConstants push_constants{};
-        push_constants.model_transform    = transparent_draw.transform;
-        push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
-        push_constants.material_index     = transparent_draw.material_index;
-
-        vkCmdSetFrontFace(command_buffer, transparent_draw.front_face);
-
-        vkCmdPushConstants(command_buffer, renderer->shadow_map_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(PushConstants), &push_constants);
-
-        vkCmdBindIndexBuffer(command_buffer, transparent_draw.index_buffer.buffer, 0, transparent_draw.index_type);
-        vkCmdDrawIndexed(command_buffer, transparent_draw.index_count, 1, 0, 0, 0);
     }
 
     vkCmdEndRenderingKHR(command_buffer);
@@ -1056,10 +1048,13 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/pkg_c1_trees/NewSponza_CypressTree_glTF.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
-    // renderer_add_gltf_asset(renderer, "../assets/structure.glb");
+    // renderer_add_gltf_asset(renderer, "../assets/structure_mat.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
     // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
     // renderer_add_gltf_asset(renderer, "../assets/ClearCoatTest.glb");
