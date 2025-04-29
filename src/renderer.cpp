@@ -843,11 +843,21 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdSetScissor(command_buffer, 0, 1, &shadow_map_scissor);
 
-    const VkImageMemoryBarrier2 shadow_map_clear_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
+    // SHADOW MAP GENERATION
 
-    VkDependencyInfo depth_only_dependency_info = vk_lib::dependency_info(&shadow_map_clear_image_memory_barrier, nullptr, nullptr);
+    const VkImageMemoryBarrier2 shadow_map_clear_image_memory_barrier =
+        vk_lib::image_memory_barrier_2(renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
+                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
+                                       VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_NONE, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+
+    const VkImageMemoryBarrier2 depth_pre_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_ACCESS_2_NONE);
+
+    std::array depth_only_memory_barriers = {shadow_map_clear_image_memory_barrier, depth_pre_image_memory_barrier};
+
+    VkDependencyInfo depth_only_dependency_info = vk_lib::dependency_info_batch(depth_only_memory_barriers, {}, {});
+
     vkCmdPipelineBarrier2(command_buffer, &depth_only_dependency_info);
 
     VkClearValue shadow_depth_clear_value{};
@@ -886,21 +896,7 @@ void renderer_draw(Renderer* renderer) {
 
     renderer_set_main_pass_scene_data(renderer, frame_index);
 
-    const VkImageMemoryBarrier2 shadow_map_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-
-    const VkImageMemoryBarrier2 depth_pre_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
-        VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT);
-
-    std::array depth_only_memory_barriers = {shadow_map_write_image_memory_barrier, depth_pre_image_memory_barrier};
-
-    depth_only_dependency_info = vk_lib::dependency_info_batch(depth_only_memory_barriers, {}, {});
-
-    vkCmdPipelineBarrier2(command_buffer, &depth_only_dependency_info);
+    // DEPTH PRE-PASS
 
     const VkViewport viewport = vk_lib::viewport(static_cast<float>(swapchain_ctx->extent.width), static_cast<float>(swapchain_ctx->extent.height));
     const VkRect2D   scissor  = vk_lib::rect_2d(swapchain_ctx->extent);
@@ -914,8 +910,9 @@ void renderer_draw(Renderer* renderer) {
     VkRenderingAttachmentInfo depth_pre_attachment_info =
         vk_lib::rendering_attachment_info(renderer->depth_image.image_view, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
                                           VK_ATTACHMENT_STORE_OP_STORE, &depth_clear_value);
+
     const VkRect2D render_area = vk_lib::rect_2d(swapchain_ctx->extent);
-    // TODO: depth pre pass on opaque objects
+
     const VkRenderingInfoKHR depth_pre_rendering_info = vk_lib::rendering_info(render_area, {}, &depth_pre_attachment_info);
     vkCmdBeginRenderingKHR(command_buffer, &depth_pre_rendering_info);
 
@@ -941,13 +938,18 @@ void renderer_draw(Renderer* renderer) {
     vkCmdEndRendering(command_buffer);
 
     const VkImageMemoryBarrier2 depth_pre_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+        renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
 
     // VkDependencyInfo depth_pre_write_dependency_info = vk_lib::dependency_info(&depth_pre_write_image_memory_barrier, nullptr, nullptr);
-
+    const VkImageMemoryBarrier2 shadow_map_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
     const VkImageMemoryBarrier2 msaa_draw_image_memory_barrier =
+
         vk_lib::image_memory_barrier_2(renderer->msaa_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
                                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -957,7 +959,8 @@ void renderer_draw(Renderer* renderer) {
                                        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
                                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, depth_pre_write_image_memory_barrier};
+    std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, shadow_map_write_image_memory_barrier,
+                                             depth_pre_write_image_memory_barrier};
 
     const VkDependencyInfo draw_dependency_info = vk_lib::dependency_info_batch(draw_image_memory_barriers, {}, {});
 
@@ -1133,11 +1136,11 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/pkg_c1_trees/NewSponza_CypressTree_glTF.gltf");
-    // renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/pkg_c1_trees/NewSponza_CypressTree_glTF.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure_mat.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");

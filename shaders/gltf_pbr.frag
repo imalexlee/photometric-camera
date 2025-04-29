@@ -123,7 +123,7 @@ void main() {
         tex_normal = tex_normal* 2.f - 1.f;
         tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
         tex_normal = normalize(tex_normal);
-        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * -vert_tangent.w;
+        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
         TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
         normal = normalize(TBN * tex_normal);
     }
