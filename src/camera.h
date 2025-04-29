@@ -2,6 +2,7 @@
 #include "common.h"
 
 struct Camera {
+    glm::mat4           proj{};
     glm::vec<2, double> cursor_pos{};
     glm::vec3           look_at{};
     glm::vec3           eye_pos{0, 0, 2};
@@ -24,5 +25,7 @@ void camera_mouse_button_callback(GLFWwindow* window, int button, int action, in
 [[nodiscard]] glm::mat4 camera_rotation();
 
 [[nodiscard]] glm::mat4 camera_view();
+
+void set_camera_proj(float fov_y_radians, float aspect_ratio);
 
 void camera_update(float delta_time);

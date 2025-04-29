@@ -29,16 +29,16 @@ struct PushConstants {
 };
 
 struct Material {
-    TextureInfo base_color_texture{};
-    TextureInfo metallic_roughness_texture{};
-    TextureInfo normal_texture{};
-    TextureInfo occlusion_texture{};
-    TextureInfo emissive_texture{};
+    vk_gltf::TextureInfo base_color_texture{};
+    vk_gltf::TextureInfo metallic_roughness_texture{};
+    vk_gltf::TextureInfo normal_texture{};
+    vk_gltf::TextureInfo occlusion_texture{};
+    vk_gltf::TextureInfo emissive_texture{};
 
     // extension textures
-    TextureInfo clearcoat_texture{};
-    TextureInfo clearcoat_roughness_texture{};
-    TextureInfo clearcoat_normal_texture{};
+    vk_gltf::TextureInfo clearcoat_texture{};
+    vk_gltf::TextureInfo clearcoat_roughness_texture{};
+    vk_gltf::TextureInfo clearcoat_normal_texture{};
 
     glm::vec4 base_color_factors{};
     glm::vec3 emissive_factors{};
@@ -57,6 +57,11 @@ struct Texture {
     VkSampler      sampler{nullptr};
 };
 
+struct Bounds {
+    glm::vec3 origin{};
+    glm::vec3 extent{};
+};
+
 // loosely matches a GltfPrimitive
 struct DrawObject {
     glm::mat4           transform{};
@@ -64,6 +69,7 @@ struct DrawObject {
     VkIndexType         index_type{};
     uint32_t            index_count{};
     AllocatedBuffer     vertex_buffer{};
+    Bounds              bounds{};
     VkFrontFace         front_face{};
     VkPrimitiveTopology topology{};
     uint32_t            material_index{};
@@ -95,16 +101,20 @@ struct Renderer {
 
     SceneData scene_data{};
 
-    std::vector<GltfAsset>       assets{};
-    AllocatedBuffer              material_buffer{};
-    std::vector<AllocatedBuffer> main_scene_data_buffers{};
-    std::vector<AllocatedBuffer> shadow_scene_data_buffers{};
-    AllocatedImage               default_texture_image;
-    VkSampler                    default_sampler{};
-    uint32_t                     material_count{};
-    uint32_t                     texture_count{};
-    std::vector<DrawObject>      opaque_draws;
-    std::vector<DrawObject>      transparent_draws;
+    std::vector<vk_gltf::GltfAsset> assets{};
+    AllocatedBuffer                 material_buffer{};
+    std::vector<AllocatedBuffer>    main_scene_data_buffers{};
+    std::vector<AllocatedBuffer>    shadow_scene_data_buffers{};
+    AllocatedImage                  default_texture_image;
+    VkSampler                       default_sampler{};
+    uint32_t                        material_count{};
+    uint32_t                        texture_count{};
+    std::vector<DrawObject>         opaque_draws;
+    std::vector<DrawObject>         transparent_draws;
+
+    // for frustum culling
+    std::vector<DrawObject> visible_opaque_draws;
+    std::vector<DrawObject> visible_transparent_draws;
 
     float frame_time{};
 

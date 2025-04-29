@@ -471,7 +471,7 @@ static void renderer_init_shader_data(Renderer* renderer) {
     VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &asset_desc_set_ai, &renderer->asset_descriptor_set));
 
     // create default material
-    TextureInfo default_texture_info{};
+    vk_gltf::TextureInfo default_texture_info{};
     default_texture_info.tex_index = 0;
     default_texture_info.tex_coord = 0;
 
@@ -569,26 +569,27 @@ static void renderer_init_shader_data(Renderer* renderer) {
 }
 
 void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
-    LoadOptions gltf_load_options{};
+    vk_gltf::LoadOptions gltf_load_options{};
     gltf_load_options.gltf_path      = gltf_path;
     gltf_load_options.cache_dir      = "cache/";
     gltf_load_options.create_mipmaps = true;
 
-    GltfAsset asset = load_gltf(&gltf_load_options, renderer->allocator, renderer->vk_context.device, renderer->vk_context.frame_command_pool,
-                                renderer->vk_context.graphics_queue);
+    vk_gltf::GltfAsset asset = vk_gltf::load_gltf(&gltf_load_options, renderer->allocator, renderer->vk_context.device,
+                                                  renderer->vk_context.frame_command_pool, renderer->vk_context.graphics_queue);
 
     // add new draw objects
-    for (const GltfNode& node : asset.nodes) {
+    for (const vk_gltf::GltfNode& node : asset.nodes) {
         if (!node.mesh.has_value()) {
             // only renderer nodes with meshes
             continue;
         }
-        const GltfMesh* gltf_mesh = &asset.meshes[node.mesh.value()];
-        for (const GltfPrimitive& gltf_primitive : gltf_mesh->primitives) {
+        const vk_gltf::GltfMesh* gltf_mesh = &asset.meshes[node.mesh.value()];
+        for (const vk_gltf::GltfPrimitive& gltf_primitive : gltf_mesh->primitives) {
             DrawObject new_draw_object{};
-            new_draw_object.transform = glm::make_mat4(node.world_transform);
-
-            new_draw_object.topology = gltf_primitive.topology;
+            new_draw_object.transform     = glm::make_mat4(node.world_transform);
+            new_draw_object.topology      = gltf_primitive.topology;
+            new_draw_object.bounds.origin = glm::make_vec3(gltf_primitive.bounds.origin);
+            new_draw_object.bounds.extent = glm::make_vec3(gltf_primitive.bounds.extent);
 
             if (glm::determinant(new_draw_object.transform) > 0) {
                 new_draw_object.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -597,8 +598,8 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
             }
 
             if (gltf_primitive.index_buffer.has_value()) {
-                const GltfBuffer* gltf_buf = &gltf_primitive.index_buffer.value();
-                AllocatedBuffer   index_buf{};
+                const vk_gltf::GltfBuffer* gltf_buf = &gltf_primitive.index_buffer.value();
+                AllocatedBuffer            index_buf{};
                 index_buf.address         = gltf_buf->address;
                 index_buf.buffer          = gltf_buf->buffer;
                 index_buf.allocation      = gltf_buf->allocation;
@@ -612,7 +613,7 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
             new_draw_object.index_count = gltf_primitive.index_count;
             new_draw_object.index_type  = gltf_primitive.index_type;
 
-            const GltfBuffer* gltf_buf = &gltf_primitive.vertex_buffer;
+            const vk_gltf::GltfBuffer* gltf_buf = &gltf_primitive.vertex_buffer;
 
             AllocatedBuffer vertex_buf{};
             vertex_buf.address         = gltf_buf->address;
@@ -626,7 +627,7 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
                 // offset the material index by how many materials we already have from other gltf assets
                 new_draw_object.material_index = gltf_primitive.material.value() + renderer->material_count;
 
-                if (asset.materials[gltf_primitive.material.value()].alpha_mode == GltfAlphaMode::opaque) {
+                if (asset.materials[gltf_primitive.material.value()].alpha_mode == vk_gltf::GltfAlphaMode::opaque) {
                     renderer->opaque_draws.push_back(new_draw_object);
                 } else {
                     renderer->transparent_draws.push_back(new_draw_object);
@@ -640,10 +641,16 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
         }
     }
 
+    if (renderer->visible_opaque_draws.capacity() < renderer->opaque_draws.size()) {
+        renderer->visible_opaque_draws.reserve(renderer->opaque_draws.size());
+    }
+    if (renderer->visible_transparent_draws.capacity() < renderer->transparent_draws.size()) {
+        renderer->visible_transparent_draws.reserve(renderer->transparent_draws.size());
+    }
     // add new materials
     std::vector<Material> materials;
     materials.reserve(asset.materials.size());
-    for (const GltfMaterial& gltf_material : asset.materials) {
+    for (const vk_gltf::GltfMaterial& gltf_material : asset.materials) {
         Material new_material{};
 
         // I will offset the texture indices by how many textures we already have from other gltf assets
@@ -702,12 +709,12 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
     // add new textures
     std::vector<Texture> textures;
     textures.reserve(asset.textures.size());
-    for (const GltfTexture& gltf_texture : asset.textures) {
+    for (const vk_gltf::GltfTexture& gltf_texture : asset.textures) {
         Texture new_texture{};
 
         // it would be really weird for a gltf_texture to not have an image btw. handle it anyway
         if (gltf_texture.image_index.has_value()) {
-            const GltfImage* gltf_image = &asset.images[gltf_texture.image_index.value()];
+            const vk_gltf::GltfImage* gltf_image = &asset.images[gltf_texture.image_index.value()];
 
             AllocatedImage image{};
             image.image           = gltf_image->image;
@@ -740,10 +747,11 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
 static void renderer_set_main_pass_scene_data(Renderer* renderer, uint32_t frame_index) {
     camera_update(renderer->frame_time);
     SceneData scene_data{};
-    float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
+    // float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) /
+    // static_cast<float>(renderer->swapchain_context.extent.height); scene_data.proj = glm::perspective(glm::radians(70.f), aspect_ratio, 10000.f,
+    // 0.01f); scene_data.proj[1][1] *= -1;
 
-    scene_data.proj = glm::perspective(glm::radians(70.f), aspect_ratio, 10000.f, 0.01f);
-    scene_data.proj[1][1] *= -1;
+    scene_data.proj = global::camera.proj;
 
     scene_data.view = camera_view();
 
@@ -783,6 +791,55 @@ static void renderer_set_shadow_pass_scene_data(Renderer* renderer, uint32_t fra
     vkUpdateDescriptorSets(renderer->vk_context.device, 1, &descriptor_write, 0, nullptr);
 }
 
+bool is_visible(const DrawObject* obj, const glm::mat4& view_proj) {
+    std::array<glm::vec3, 8> corners{
+        glm::vec3{1,  1,  1 },
+        glm::vec3{1,  1,  -1},
+        glm::vec3{1,  -1, 1 },
+        glm::vec3{1,  -1, -1},
+        glm::vec3{-1, 1,  1 },
+        glm::vec3{-1, 1,  -1},
+        glm::vec3{-1, -1, 1 },
+        glm::vec3{-1, -1, -1},
+    };
+
+    glm::mat4 matrix = view_proj * obj->transform;
+
+    glm::vec3 min = {1.5, 1.5, 1.5};
+    glm::vec3 max = {-1.5, -1.5, -1.5};
+
+    for (int c = 0; c < 8; c++) {
+        // project each corner into clip space
+        glm::vec4 v = matrix * glm::vec4(obj->bounds.origin + (corners[c] * obj->bounds.extent), 1.f);
+
+        // perspective correction
+        v.x = v.x / v.w;
+        v.y = v.y / v.w;
+        v.z = v.z / v.w;
+
+        min = glm::min(glm::vec3{v.x, v.y, v.z}, min);
+        max = glm::max(glm::vec3{v.x, v.y, v.z}, max);
+    }
+
+    // check the clip space box is within the view
+    if (min.z > 1.f || max.z < 0.f || min.x > 1.f || max.x < -1.f || min.y > 1.f || max.y < -1.f) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+static void renderer_resize_screen(Renderer* renderer) {
+    SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
+    VkContext*        vk_ctx        = &renderer->vk_context;
+    swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window.glfw_window);
+    destroy_render_resources(renderer);
+    create_render_resources(renderer);
+
+    float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
+    set_camera_proj(glm::radians(70.f), aspect_ratio);
+}
+
 void renderer_draw(Renderer* renderer) {
     static auto last_frame_time    = std::chrono::high_resolution_clock::now();
     auto        current_frame_time = std::chrono::high_resolution_clock::now();
@@ -804,6 +861,24 @@ void renderer_draw(Renderer* renderer) {
     const uint32_t    frame_index   = renderer->curr_frame % swapchain_ctx->images.size();
     const Frame*      current_frame = &renderer->frames[frame_index];
 
+    // Perform Frustum Culling
+
+    renderer->visible_opaque_draws.clear();
+    renderer->visible_transparent_draws.clear();
+
+    glm::mat4 camera_view_proj = global::camera.proj * camera_view();
+    for (const DrawObject& opaque_obj : renderer->opaque_draws) {
+        if (is_visible(&opaque_obj, camera_view_proj)) {
+            renderer->visible_opaque_draws.push_back(opaque_obj);
+        }
+    }
+
+    for (const DrawObject& transparent_obj : renderer->transparent_draws) {
+        if (is_visible(&transparent_obj, camera_view_proj)) {
+            renderer->visible_transparent_draws.push_back(transparent_obj);
+        }
+    }
+
     VkCommandBuffer command_buffer = current_frame->command_buffer;
 
     VK_CHECK(vkWaitForFences(vk_ctx->device, 1, &current_frame->in_flight_fence, true, UINT64_MAX));
@@ -816,9 +891,7 @@ void renderer_draw(Renderer* renderer) {
                                                       nullptr, &swapchain_image_index);
 
     if (swapchain_result == VK_ERROR_OUT_OF_DATE_KHR || swapchain_result == VK_SUBOPTIMAL_KHR) {
-        swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window.glfw_window);
-        destroy_render_resources(renderer);
-        create_render_resources(renderer);
+        renderer_resize_screen(renderer);
         return;
     }
 
@@ -920,7 +993,7 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->depth_pre_graphics_pipeline.pipeline_layout, 0, 1,
                             &renderer->scene_descriptor_sets[frame_index], 0, nullptr);
-    for (const DrawObject& opaque_draw : renderer->opaque_draws) {
+    for (const DrawObject& opaque_draw : renderer->visible_opaque_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
@@ -993,7 +1066,7 @@ void renderer_draw(Renderer* renderer) {
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->opaque_graphics_pipeline.pipeline_layout, 0, desc_sets.size(),
                             desc_sets.data(), 0, nullptr);
 
-    for (const DrawObject& opaque_draw : renderer->opaque_draws) {
+    for (const DrawObject& opaque_draw : renderer->visible_opaque_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
@@ -1010,7 +1083,7 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->transparent_graphics_pipeline.pipeline);
 
-    for (const DrawObject& transparent_draw : renderer->transparent_draws) {
+    for (const DrawObject& transparent_draw : renderer->visible_transparent_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = transparent_draw.transform;
         push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
@@ -1052,9 +1125,7 @@ void renderer_draw(Renderer* renderer) {
     swapchain_result = vkQueuePresentKHR(vk_ctx->present_queue, &present);
 
     if (swapchain_result == VK_ERROR_OUT_OF_DATE_KHR || swapchain_result == VK_SUBOPTIMAL_KHR) {
-        swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window.glfw_window);
-        destroy_render_resources(renderer);
-        create_render_resources(renderer);
+        renderer_resize_screen(renderer);
         return;
     }
     renderer->curr_frame++;
@@ -1089,8 +1160,12 @@ void renderer_recompile_pipelines(Renderer* renderer) {
     if (renderer->shadow_map_graphics_pipeline.vert_shader) {
         vkDestroyShaderModule(device, renderer->shadow_map_graphics_pipeline.vert_shader, nullptr);
     }
-
-    // TODO: destroy depth pre pass resources
+    if (renderer->depth_pre_graphics_pipeline.pipeline) {
+        vkDestroyPipeline(device, renderer->depth_pre_graphics_pipeline.pipeline, nullptr);
+    }
+    if (renderer->depth_pre_graphics_pipeline.pipeline_layout) {
+        vkDestroyPipelineLayout(device, renderer->depth_pre_graphics_pipeline.pipeline_layout, nullptr);
+    }
 
     renderer_create_graphics_pipeline(renderer, renderer->swapchain_context.surface_format.format);
 }
@@ -1146,6 +1221,9 @@ void renderer_create(Renderer* renderer) {
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
     // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
     // renderer_add_gltf_asset(renderer, "../assets/ClearCoatTest.glb");
+
+    float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
+    set_camera_proj(glm::radians(70.f), aspect_ratio);
 
     active_renderer = renderer;
 }

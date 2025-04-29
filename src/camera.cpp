@@ -92,6 +92,13 @@ glm::mat4 camera_view() {
     return glm::inverse(translation * camera_rotation());
 }
 
+void set_camera_proj(float fov_y_radians, float aspect_ratio) {
+    glm::mat4 proj = glm::perspective(fov_y_radians, aspect_ratio, 10000.f, 0.01f);
+    proj[1][1] *= -1;
+
+    global::camera.proj = proj;
+}
+
 void camera_update(float delta_time) {
     if (global::camera.velocity == glm::vec3{0, 0, 0}) {
         return;
