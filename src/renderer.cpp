@@ -1211,11 +1211,11 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    // renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
-    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
-    // renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/pkg_c1_trees/NewSponza_CypressTree_glTF.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure_mat.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
