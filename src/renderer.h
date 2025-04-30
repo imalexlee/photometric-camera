@@ -72,6 +72,7 @@ struct DrawObject {
     Bounds              bounds{};
     VkFrontFace         front_face{};
     VkPrimitiveTopology topology{};
+    bool                double_sided{};
     uint32_t            material_index{};
 };
 

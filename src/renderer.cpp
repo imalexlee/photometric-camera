@@ -82,7 +82,7 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     VkPipelineColorBlendStateCreateInfo   opaque_color_blend_state            = vk_lib::pipeline_color_blend_state_create_info(opaque_color_blends);
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state =
         vk_lib::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-    std::array                       dynamic_state_types         = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_FRONT_FACE};
+    std::array dynamic_state_types = {VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_FRONT_FACE, VK_DYNAMIC_STATE_CULL_MODE};
     VkPipelineDynamicStateCreateInfo dynamic_state               = vk_lib::pipeline_dynamic_state_create_info(dynamic_state_types);
     VkGraphicsPipelineCreateInfo     opaque_graphics_pipeline_ci = vk_lib::graphics_pipeline_create_info(
         pipeline_layout, nullptr, shader_stages, &vertex_input_state, &input_assembly_state, &viewport_state, &rasterization_state,
@@ -626,6 +626,7 @@ void renderer_add_gltf_asset(Renderer* renderer, const char* gltf_path) {
             if (gltf_primitive.material.has_value()) {
                 // offset the material index by how many materials we already have from other gltf assets
                 new_draw_object.material_index = gltf_primitive.material.value() + renderer->material_count;
+                new_draw_object.double_sided   = asset.materials[gltf_primitive.material.value()].double_sided;
 
                 if (asset.materials[gltf_primitive.material.value()].alpha_mode == vk_gltf::GltfAlphaMode::opaque) {
                     renderer->opaque_draws.push_back(new_draw_object);
@@ -863,21 +864,21 @@ void renderer_draw(Renderer* renderer) {
 
     // Perform Frustum Culling
 
-    renderer->visible_opaque_draws.clear();
-    renderer->visible_transparent_draws.clear();
+    // renderer->visible_opaque_draws.clear();
+    // renderer->visible_transparent_draws.clear();
+    //
+    // glm::mat4 camera_view_proj = global::camera.proj * camera_view();
+    // for (const DrawObject& opaque_obj : renderer->opaque_draws) {
+    //     if (is_visible(&opaque_obj, camera_view_proj)) {
+    //         renderer->visible_opaque_draws.push_back(opaque_obj);
+    //     }
+    // }
 
-    glm::mat4 camera_view_proj = global::camera.proj * camera_view();
-    for (const DrawObject& opaque_obj : renderer->opaque_draws) {
-        if (is_visible(&opaque_obj, camera_view_proj)) {
-            renderer->visible_opaque_draws.push_back(opaque_obj);
-        }
-    }
-
-    for (const DrawObject& transparent_obj : renderer->transparent_draws) {
-        if (is_visible(&transparent_obj, camera_view_proj)) {
-            renderer->visible_transparent_draws.push_back(transparent_obj);
-        }
-    }
+    // for (const DrawObject& transparent_obj : renderer->transparent_draws) {
+    //     if (is_visible(&transparent_obj, camera_view_proj)) {
+    //         renderer->visible_transparent_draws.push_back(transparent_obj);
+    //     }
+    // }
 
     VkCommandBuffer command_buffer = current_frame->command_buffer;
 
@@ -956,6 +957,7 @@ void renderer_draw(Renderer* renderer) {
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
 
+        vkCmdSetCullMode(command_buffer, opaque_draw.double_sided ? VK_CULL_MODE_NONE : VK_CULL_MODE_FRONT_BIT);
         vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
 
         vkCmdPushConstants(command_buffer, renderer->shadow_map_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -993,12 +995,13 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->depth_pre_graphics_pipeline.pipeline_layout, 0, 1,
                             &renderer->scene_descriptor_sets[frame_index], 0, nullptr);
-    for (const DrawObject& opaque_draw : renderer->visible_opaque_draws) {
+    for (const DrawObject& opaque_draw : renderer->opaque_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
 
+        vkCmdSetCullMode(command_buffer, opaque_draw.double_sided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
         vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
 
         vkCmdPushConstants(command_buffer, renderer->depth_pre_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -1066,11 +1069,13 @@ void renderer_draw(Renderer* renderer) {
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->opaque_graphics_pipeline.pipeline_layout, 0, desc_sets.size(),
                             desc_sets.data(), 0, nullptr);
 
-    for (const DrawObject& opaque_draw : renderer->visible_opaque_draws) {
+    for (const DrawObject& opaque_draw : renderer->opaque_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
+
+        vkCmdSetCullMode(command_buffer, opaque_draw.double_sided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
 
         vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
 
@@ -1083,11 +1088,13 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->transparent_graphics_pipeline.pipeline);
 
-    for (const DrawObject& transparent_draw : renderer->visible_transparent_draws) {
+    for (const DrawObject& transparent_draw : renderer->transparent_draws) {
         PushConstants push_constants{};
         push_constants.model_transform    = transparent_draw.transform;
         push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
         push_constants.material_index     = transparent_draw.material_index;
+
+        vkCmdSetCullMode(command_buffer, transparent_draw.double_sided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
 
         vkCmdSetFrontFace(command_buffer, transparent_draw.front_face);
 
@@ -1211,9 +1218,9 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
 
-    renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
-    renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
+    // renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/pkg_c1_trees/NewSponza_CypressTree_glTF.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
@@ -1221,6 +1228,7 @@ void renderer_create(Renderer* renderer) {
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
     // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
     // renderer_add_gltf_asset(renderer, "../assets/ClearCoatTest.glb");
+    renderer_add_gltf_asset(renderer, "../assets/3d_field_inspection.glb");
 
     float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
     set_camera_proj(glm::radians(70.f), aspect_ratio);

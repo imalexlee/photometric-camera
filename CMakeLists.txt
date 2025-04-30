@@ -12,7 +12,7 @@ add_executable(${CMAKE_PROJECT_NAME} ${project_sources})
 FetchContent_Declare(
         vk-gltf
         GIT_REPOSITORY https://github.com/imalexlee/vk-gltf.git
-        GIT_TAG 3ab9a57c6f65d856c9e9f186b79b48d6d566153f
+        GIT_TAG 3585fd5d251c97d819c056e0a24ce43b4f9589a8
 )
 
 FetchContent_Declare(

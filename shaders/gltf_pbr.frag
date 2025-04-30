@@ -125,11 +125,14 @@ void main() {
         tex_normal = tex_normal* 2.f - 1.f;
         tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
         tex_normal = normalize(tex_normal);
-        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * -vert_tangent.w;
+        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
         TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
         normal = normalize(TBN * tex_normal);
     }
 
+    if (!gl_FrontFacing){
+        normal = -normal;
+    }
 
     float occlusion = 1.f + mat.occlusion_strength * (texture(tex_samplers[nonuniformEXT (mat.occlusion_texture.index)], occlusion_uv).r - 1.f);
     vec3 emissive = texture(tex_samplers[nonuniformEXT (mat.emissive_texture.index)], emissive_uv).rgb * mat.emissive_factors;
@@ -146,7 +149,8 @@ void main() {
 
     vec3 halfway_dir = normalize(light_dir + view_dir);
 
-    vec4 albedo = mat.base_color_factors * tex_color;
+    vec4 albedo = vert_color * mat.base_color_factors * tex_color;
+
 
     vec3 specular_brdf_val = vec3(specular_brdf(normal, halfway_dir, light_dir, view_dir, roughness));
     vec3 diffuse_brdf = diffuse_brdf(vec3(albedo));
@@ -177,8 +181,8 @@ void main() {
     }
 
     // MANUAL EXPOSURE
-    float aperture = 16.f;
-    float shutter_time = 1 / 60.f;
+    float aperture = 2.f;
+    float shutter_time = 1 / 8929.f;
     float iso = 100;
 
     float EV100 = compute_EV100(aperture, shutter_time, iso);
@@ -190,14 +194,8 @@ void main() {
 
     vec3 direct_luminance = material * sun_illuminance * n_dot_l;
 
-    float ambient_ratio = 0.1;
+    float ambient_ratio = 0.15;
     vec3 ambient_illuminance =  sun_illuminance * ambient_ratio;// typically much lower than direct illuminance
-    //    vec3 ambient_luminance = calculateAmbientLuminance(normal, view_dir, albedo.rgb, metallic, roughness, occlusion);// in cd/m²
-
-    //    vec3 ambient_lighting = calculateAmbientLighting(normal, view_dir, albedo.rgb, metallic, roughness, occlusion);
-
-    //    out_color = vec4(vec3(roughness), 1);
-    //    return;
 
     vec3 ambient_contribution = ambient_illuminance * albedo.rgb * occlusion;
     float up_factor = max((dot(normal, vec3(0, 1, 0)) + 1.f) * 0.5f, 0.2);
@@ -224,5 +222,4 @@ void main() {
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
-    //    out_color = vec4(vec3(ambient_contribution), albedo.a);
 }
