@@ -2,7 +2,13 @@
 
 SwapchainContext swapchain_context_create(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface, GLFWwindow* window) {
     std::vector<VkSurfaceFormatKHR> surface_formats;
-    VK_CHECK(vk_lib::get_physical_device_surface_formats(physical_device, surface, &surface_formats));
+
+    uint32_t format_count = 0;
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, nullptr));
+
+    surface_formats.resize(format_count);
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, surface_formats.data()));
+
     VkSurfaceFormatKHR format = surface_formats[0];
     for (const VkSurfaceFormatKHR& available_format : surface_formats) {
         if (available_format.format == VK_FORMAT_B8G8R8A8_SRGB && available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -37,7 +43,10 @@ SwapchainContext swapchain_context_create(VkPhysicalDevice physical_device, VkDe
     swapchain_context.surface_format = format;
     swapchain_context.swapchain      = swapchain;
 
-    VK_CHECK(vk_lib::get_swapchain_images(device, swapchain, &swapchain_context.images));
+    uint32_t swapchain_image_count = 0;
+    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, nullptr));
+    swapchain_context.images.resize(swapchain_image_count);
+    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, swapchain_context.images.data()));
 
     swapchain_context.image_views.reserve(swapchain_context.images.size());
     for (VkImage image : swapchain_context.images) {

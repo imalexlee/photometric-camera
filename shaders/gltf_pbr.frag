@@ -76,6 +76,8 @@ vec3 fresnel_coat(vec3 base, vec3 layer, float weight, vec3 view_dir, vec3 halfw
     return mix(base, layer, weight * fr);
 }
 
+// TONE MAPPING
+
 vec3 ACESFilm(vec3 x)
 {
     float a = 2.51f;
@@ -85,6 +87,8 @@ vec3 ACESFilm(vec3 x)
     float e = 0.14f;
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.f, 1.f);
 }
+
+// PHOTOMETRIC CAMERA
 
 float compute_EV100(float aperture, float shutterTime, float ISO) {
     // EV number is defined as :
@@ -105,8 +109,9 @@ float convert_EV100_to_exposure(float EV100) {
     // = 1.2 * 2^ EV
     // Reference : http :// en . wikipedia . org / wiki / Film_speed
     float max_luminance = 1.2f * pow(2.f, EV100);
-    return 1.f / max_luminance;
+    return max_luminance;
 }
+
 
 
 void main() {
@@ -125,7 +130,7 @@ void main() {
         tex_normal = tex_normal* 2.f - 1.f;
         tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
         tex_normal = normalize(tex_normal);
-        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
+        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * -vert_tangent.w;
         TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
         normal = normalize(TBN * tex_normal);
     }
@@ -160,6 +165,7 @@ void main() {
 
     vec3 material = mix(dielectric_brdf, metal_brdf, metallic);
 
+
     float n_dot_l = max(dot(normal, light_dir), 0.0);
 
 
@@ -180,45 +186,62 @@ void main() {
 
     }
 
-    // MANUAL EXPOSURE
-    float aperture = 2.f;
-    float shutter_time = 1 / 8929.f;
+    // PCF shadows
+    int radius = 3;
+    float shadow_texel_count = pow(radius * 2 + 1, 2);
+    float shadow = shadow_texel_count;
+    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
+    vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
+    float slope_bias = 0.0005 * tan(acos(n_dot_l));
+    // Clamp to prevent extreme bias values
+    slope_bias = clamp(slope_bias, 0.0, 0.001);
+    for (int x = -radius; x <= radius; x++) {
+        for (int y = -radius; y <= radius; y++) {
+            vec2 offset = vec2(x, y) * texelSize;
+            if (texture(shadow_map, shadow_coords.xy + offset).r < shadow_coords.z - slope_bias){
+                shadow -= 1;
+            }
+        }
+    }
+    shadow /= shadow_texel_count;
+
     float iso = 100;
+
+    // APPLE EV
+    //    float aperture = 1.78f;
+    //    float shutter_time = 1 / 11161.f;
+
+    // 14EV
+    //    float aperture = 16.f;
+    //    float shutter_time = 1 / 60.f;
+
+    // 13EV
+    //    float aperture = 11.f;
+    //    float shutter_time = 1 / 60.f;
+
+    // 12EV
+    float aperture = 8.f;
+    float shutter_time = 1 / 60.f;
 
     float EV100 = compute_EV100(aperture, shutter_time, iso);
     float exposure = convert_EV100_to_exposure(EV100);
 
     // sun
     vec3 sun_color = vec3(1);
-    vec3 sun_illuminance = sun_color * 75000;// sun lux
+    vec3 sun_illuminance = sun_color * 75000;
 
     vec3 direct_luminance = material * sun_illuminance * n_dot_l;
 
-    float ambient_ratio = 0.15;
-    vec3 ambient_illuminance =  sun_illuminance * ambient_ratio;// typically much lower than direct illuminance
+    float ambient_ratio = 0.04;
+    vec3 ambient_illuminance =  sun_illuminance * ambient_ratio;
 
     vec3 ambient_contribution = ambient_illuminance * albedo.rgb * occlusion;
-    float up_factor = max((dot(normal, vec3(0, 1, 0)) + 1.f) * 0.5f, 0.2);
+    float up_factor = dot(normal, (vec3(0, 1, 0)));
+    up_factor = (up_factor + 1.f) * 0.375f + 0.25f;// convert from [-1,1] to [0.25,1] range
     ambient_contribution *= up_factor;
 
-    // PCF shadows
-    int radius = 3;
-    float shaow_texel_count = pow(radius * 2 + 1, 2);
-    float shadow = shaow_texel_count;
-    float texelSize = 1.0 / textureSize(shadow_map, 0).x;
-    vec4 shadow_coords = vert_light_pos / vert_light_pos.w;
-    for (int x = -radius; x <= radius; x++) {
-        for (int y = -radius; y <= radius; y++) {
-            vec2 offset = vec2(x, y) * texelSize;
-            if (texture(shadow_map, shadow_coords.xy + offset).r < shadow_coords.z - 0.0005){
-                shadow -= 1;
-            }
-        }
-    }
-    shadow /= shaow_texel_count;
-
     vec3 final_color = (direct_luminance * shadow) + ambient_contribution+ emissive;
-    final_color *= exposure;
+    final_color /= exposure;
     final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);

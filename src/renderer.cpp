@@ -518,8 +518,7 @@ static void renderer_init_shader_data(Renderer* renderer) {
     vk_command_immediate_submit(
         renderer->vk_context.device, renderer->vk_context.frame_command_pool, renderer->vk_context.graphics_queue, [&](VkCommandBuffer cmd_buf) {
             VkImageMemoryBarrier2 pre_transfer_memory_barrier = vk_lib::image_memory_barrier_2(
-                renderer->default_texture_image.image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                renderer->vk_context.queue_family, renderer->vk_context.queue_family);
+                renderer->default_texture_image.image, subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
             VkDependencyInfo pre_transfer_dependency_info = vk_lib::dependency_info(&pre_transfer_memory_barrier, nullptr, nullptr);
             vkCmdPipelineBarrier2(cmd_buf, &pre_transfer_dependency_info);
@@ -529,9 +528,9 @@ static void renderer_init_shader_data(Renderer* renderer) {
             vkCmdCopyBufferToImage(cmd_buf, staging_buffer.buffer, renderer->default_texture_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                                    &copy_region);
 
-            VkImageMemoryBarrier2 texture_use_memory_barrier = vk_lib::image_memory_barrier_2(
-                renderer->default_texture_image.image, subresource_range, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, renderer->vk_context.queue_family, renderer->vk_context.queue_family);
+            VkImageMemoryBarrier2 texture_use_memory_barrier =
+                vk_lib::image_memory_barrier_2(renderer->default_texture_image.image, subresource_range, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
             VkDependencyInfo texture_use_dependency_info = vk_lib::dependency_info(&texture_use_memory_barrier, nullptr, nullptr);
             vkCmdPipelineBarrier2(cmd_buf, &texture_use_dependency_info);
@@ -919,14 +918,13 @@ void renderer_draw(Renderer* renderer) {
 
     // SHADOW MAP GENERATION
 
-    const VkImageMemoryBarrier2 shadow_map_clear_image_memory_barrier =
-        vk_lib::image_memory_barrier_2(renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
-                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
-                                       VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_NONE, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+    const VkImageMemoryBarrier2 shadow_map_clear_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_NONE, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
 
     const VkImageMemoryBarrier2 depth_pre_image_memory_barrier = vk_lib::image_memory_barrier_2(
         renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_ACCESS_2_NONE);
+        VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_ACCESS_2_NONE);
 
     std::array depth_only_memory_barriers = {shadow_map_clear_image_memory_barrier, depth_pre_image_memory_barrier};
 
@@ -1015,25 +1013,23 @@ void renderer_draw(Renderer* renderer) {
 
     const VkImageMemoryBarrier2 depth_pre_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
         renderer->depth_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
 
     // VkDependencyInfo depth_pre_write_dependency_info = vk_lib::dependency_info(&depth_pre_write_image_memory_barrier, nullptr, nullptr);
     const VkImageMemoryBarrier2 shadow_map_write_image_memory_barrier = vk_lib::image_memory_barrier_2(
         renderer->shadow_map_image.image, depth_subresource_range, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
-        vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
-    const VkImageMemoryBarrier2 msaa_draw_image_memory_barrier =
+        VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
 
-        vk_lib::image_memory_barrier_2(renderer->msaa_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
-                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_NONE,
-                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    const VkImageMemoryBarrier2 msaa_draw_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->msaa_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
     const VkImageMemoryBarrier2 resolve_draw_image_memory_barrier =
         vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                       vk_ctx->queue_family, vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+                                       VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
     std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, shadow_map_write_image_memory_barrier,
                                              depth_pre_write_image_memory_barrier};
@@ -1107,10 +1103,10 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdEndRenderingKHR(command_buffer);
 
-    const VkImageMemoryBarrier2 resolve_present_image_memory_barrier = vk_lib::image_memory_barrier_2(
-        swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, vk_ctx->queue_family,
-        vk_ctx->queue_family, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_NONE);
+    const VkImageMemoryBarrier2 resolve_present_image_memory_barrier =
+        vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_NONE);
 
     const VkDependencyInfo present_dependency_info = vk_lib::dependency_info(&resolve_present_image_memory_barrier, nullptr, nullptr);
     vkCmdPipelineBarrier2(command_buffer, &present_dependency_info);
@@ -1222,13 +1218,13 @@ void renderer_create(Renderer* renderer) {
     // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/pkg_c1_trees/NewSponza_CypressTree_glTF.gltf");
-    // renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
+    renderer_add_gltf_asset(renderer, "../assets/sponza/Sponza.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/DamagedHelmet.glb");
     // renderer_add_gltf_asset(renderer, "../assets/structure_mat.glb");
     // renderer_add_gltf_asset(renderer, "../assets/PictureClue.glb");
     // renderer_add_gltf_asset(renderer, "../assets/porsche.glb");
     // renderer_add_gltf_asset(renderer, "../assets/ClearCoatTest.glb");
-    renderer_add_gltf_asset(renderer, "../assets/3d_field_inspection.glb");
+    // renderer_add_gltf_asset(renderer, "../assets/3d_field_inspection.glb");
 
     float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
     set_camera_proj(glm::radians(70.f), aspect_ratio);

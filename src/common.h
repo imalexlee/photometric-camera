@@ -1,14 +1,10 @@
 #pragma once
 
-#include <vk_lib/commands.h>
-#include <vk_lib/core.h>
-#include <vk_lib/pipelines.h>
-#include <vk_lib/presentation.h>
-#include <vk_lib/rendering.h>
-#include <vk_lib/resources.h>
-#include <vk_lib/shader_data.h>
-#include <vk_lib/shaders.h>
-#include <vk_lib/synchronization.h>
+#define VK_NO_PROTOTYPES
+
+#include <volk.h>
+
+#include <vk_lib.h>
 #include <vulkan/vk_enum_string_helper.h>
 
 #define GLFW_INCLUDE_VULKAN
