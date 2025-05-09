@@ -14,6 +14,12 @@ struct GraphicsPipeline {
     VkShaderModule   frag_shader{};
 };
 
+struct ComputePipeline {
+    VkPipeline       pipeline{};
+    VkPipelineLayout pipeline_layout{};
+    VkShaderModule   shader{};
+};
+
 struct SceneData {
     glm::mat4 view{};
     glm::mat4 proj{};
@@ -22,10 +28,27 @@ struct SceneData {
     glm::vec3 sun_dir{};
 };
 
-struct PushConstants {
+struct DrawPushConstants {
     glm::mat4       model_transform{};
     VkDeviceAddress vertex_buf_address{};
     uint32_t        material_index{};
+};
+
+struct BuildHistPushConstants {
+    VkDeviceAddress histogram_buf_address{};
+    uint32_t        view_width{};
+    uint32_t        view_height{};
+};
+
+struct AverageHistPushConstants {
+    VkDeviceAddress histogram_buf_address{};
+    VkDeviceAddress luminance_avg_buf_address{};
+    uint32_t        pixel_count{};
+    float           delta_time{};
+};
+
+struct ColorCorrectPushConstants {
+    VkDeviceAddress luminance_avg_buf_address{};
 };
 
 struct Material {
@@ -80,25 +103,41 @@ struct Renderer {
     VkContext        vk_context{};
     SwapchainContext swapchain_context{};
 
-    std::vector<Frame>           frames{};
-    Window                       window{};
-    uint64_t                     curr_frame{};
-    GraphicsPipeline             opaque_graphics_pipeline{};
-    GraphicsPipeline             transparent_graphics_pipeline{};
-    GraphicsPipeline             shadow_map_graphics_pipeline{};
-    GraphicsPipeline             depth_pre_graphics_pipeline{};
-    VmaAllocator                 allocator{};
+    std::vector<Frame> frames{};
+    Window             window{};
+    uint64_t           curr_frame{};
+
+    GraphicsPipeline opaque_graphics_pipeline{};
+    GraphicsPipeline transparent_graphics_pipeline{};
+    GraphicsPipeline shadow_map_graphics_pipeline{};
+    GraphicsPipeline depth_pre_graphics_pipeline{};
+
+    ComputePipeline build_exposure_hist_compute_pipeline{};
+    ComputePipeline average_exposure_hist_compute_pipeline{};
+    ComputePipeline color_correct_compute_pipeline{};
+
+    VmaAllocator allocator{};
+
     AllocatedImage               msaa_color_image{};
+    AllocatedImage               resolve_color_image{};
     AllocatedImage               depth_image{};
     AllocatedImage               shadow_map_image{};
+    AllocatedBuffer              exposure_histogram{};
+    AllocatedBuffer              average_luminance_buf{};
     VkExtent3D                   shadow_map_extent{};
     VkDescriptorPool             descriptor_pool{};
     std::vector<VkDescriptorSet> shadow_descriptor_sets{};
     std::vector<VkDescriptorSet> scene_descriptor_sets{};
-    VkDescriptorSet              asset_descriptor_set{};
-    VkDescriptorSetLayout        shadow_descriptor_set_layout{};
-    VkDescriptorSetLayout        scene_descriptor_set_layout{};
-    VkDescriptorSetLayout        asset_descriptor_set_layout{};
+
+    VkDescriptorSet asset_descriptor_set{};
+    VkDescriptorSet build_histogram_descriptor_set{};
+    VkDescriptorSet color_correct_descriptor_set{};
+
+    VkDescriptorSetLayout shadow_descriptor_set_layout{};
+    VkDescriptorSetLayout scene_descriptor_set_layout{};
+    VkDescriptorSetLayout asset_descriptor_set_layout{};
+    VkDescriptorSetLayout build_histogram_descriptor_set_layout{};
+    VkDescriptorSetLayout color_correct_descriptor_set_layout{};
 
     SceneData scene_data{};
 

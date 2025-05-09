@@ -130,7 +130,7 @@ void main() {
         tex_normal = tex_normal* 2.f - 1.f;
         tex_normal *= vec3(mat.normal_scale, mat.normal_scale, 1);
         tex_normal = normalize(tex_normal);
-        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * -vert_tangent.w;
+        vec3 bitangent = cross(vert_normal, vec3(vert_tangent)) * vert_tangent.w;
         TBN = mat3(vec3(vert_tangent), bitangent, vert_normal);
         normal = normalize(TBN * tex_normal);
     }
@@ -224,7 +224,11 @@ void main() {
     float shutter_time = 1 / 60.f;
 
     float EV100 = compute_EV100(aperture, shutter_time, iso);
+
+    EV100 = log2(1026.f * 100.f / 12.5);
+
     float exposure = convert_EV100_to_exposure(EV100);
+
 
     // sun
     vec3 sun_color = vec3(1);
@@ -241,8 +245,11 @@ void main() {
     ambient_contribution *= up_factor;
 
     vec3 final_color = (direct_luminance * shadow) + ambient_contribution+ emissive;
-    final_color /= exposure;
-    final_color = ACESFilm(final_color);
+
+    // TODO: store colors in HDR texture and apply dynamic exposure and tone mapping in post-processing
+    //    final_color /= exposure;
+    //
+    //    final_color = ACESFilm(final_color);
 
     out_color = vec4(final_color, albedo.a);
 }

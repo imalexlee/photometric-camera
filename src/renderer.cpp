@@ -50,18 +50,102 @@ static VkShaderModule load_shader(VkDevice device, const std::filesystem::path& 
     return shader_module;
 }
 
-static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color_attachment_format) {
+static void renderer_create_compute_pipelines(Renderer* renderer) {
+    VkDevice device = renderer->vk_context.device;
+
+    // BUILD EXPOSURE HISTOGRAM PIPELINE
+
+    VkShaderModule                  build_exposure_histogram_shader = load_shader(device, "../shaders/build_exposure_histogram.comp.spv");
+    VkPipelineShaderStageCreateInfo build_exposure_histogram_shader_stage =
+        vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, build_exposure_histogram_shader);
+
+    std::array          build_hist_set_layouts         = {renderer->build_histogram_descriptor_set_layout};
+    VkPushConstantRange build_hist_push_constant_range = vk_lib::push_constant_range(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(BuildHistPushConstants));
+    std::array          build_hist_constant_ranges     = {build_hist_push_constant_range};
+    VkPipelineLayoutCreateInfo build_hist_pipeline_layout_ci =
+        vk_lib::pipeline_layout_create_info(build_hist_set_layouts, build_hist_constant_ranges);
+
+    VkPipelineLayout build_hist_pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(device, &build_hist_pipeline_layout_ci, nullptr, &build_hist_pipeline_layout));
+    VkComputePipelineCreateInfo build_hist_pipeline_ci =
+        vk_lib::compute_pipeline_create_info(build_hist_pipeline_layout, build_exposure_histogram_shader_stage);
+
+    VkPipeline build_hist_pipeline;
+    VK_CHECK(vkCreateComputePipelines(device, nullptr, 1, &build_hist_pipeline_ci, nullptr, &build_hist_pipeline));
+
+    ComputePipeline build_hist_comp_pipeline{};
+    build_hist_comp_pipeline.pipeline        = build_hist_pipeline;
+    build_hist_comp_pipeline.pipeline_layout = build_hist_pipeline_layout;
+    build_hist_comp_pipeline.shader          = build_exposure_histogram_shader;
+
+    renderer->build_exposure_hist_compute_pipeline = build_hist_comp_pipeline;
+
+    // AVERAGE EXPOSURE HISTOGRAM PIPELINE
+
+    VkShaderModule                  avg_exposure_histogram_shader = load_shader(device, "../shaders/average_exposure_histogram.comp.spv");
+    VkPipelineShaderStageCreateInfo avg_exposure_histogram_shader_stage =
+        vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, avg_exposure_histogram_shader);
+
+    VkPushConstantRange avg_hist_push_constant_range = vk_lib::push_constant_range(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(AverageHistPushConstants));
+    std::array          avg_hist_constant_ranges     = {avg_hist_push_constant_range};
+    VkPipelineLayoutCreateInfo avg_hist_pipeline_layout_ci = vk_lib::pipeline_layout_create_info({}, avg_hist_constant_ranges);
+
+    VkPipelineLayout avg_hist_pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(device, &avg_hist_pipeline_layout_ci, nullptr, &avg_hist_pipeline_layout));
+    VkComputePipelineCreateInfo avg_hist_pipeline_ci =
+        vk_lib::compute_pipeline_create_info(avg_hist_pipeline_layout, avg_exposure_histogram_shader_stage);
+
+    VkPipeline avg_hist_pipeline;
+    VK_CHECK(vkCreateComputePipelines(device, nullptr, 1, &avg_hist_pipeline_ci, nullptr, &avg_hist_pipeline));
+
+    ComputePipeline avg_hist_comp_pipeline{};
+    avg_hist_comp_pipeline.pipeline        = avg_hist_pipeline;
+    avg_hist_comp_pipeline.pipeline_layout = avg_hist_pipeline_layout;
+    avg_hist_comp_pipeline.shader          = avg_exposure_histogram_shader;
+
+    renderer->average_exposure_hist_compute_pipeline = avg_hist_comp_pipeline;
+
+    // COLOR CORRECTION PIPELINE
+
+    VkShaderModule                  color_correct_histogram_shader = load_shader(device, "../shaders/final_color_correction.comp.spv");
+    VkPipelineShaderStageCreateInfo color_correct_histogram_shader_stage =
+        vk_lib::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, color_correct_histogram_shader);
+
+    std::array          color_correct_set_layouts = {renderer->color_correct_descriptor_set_layout};
+    VkPushConstantRange color_correct_push_constant_range =
+        vk_lib::push_constant_range(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(ColorCorrectPushConstants));
+    std::array                 color_correct_constant_ranges = {color_correct_push_constant_range};
+    VkPipelineLayoutCreateInfo color_correct_pipeline_layout_ci =
+        vk_lib::pipeline_layout_create_info(color_correct_set_layouts, color_correct_constant_ranges);
+
+    VkPipelineLayout color_correct_pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(device, &color_correct_pipeline_layout_ci, nullptr, &color_correct_pipeline_layout));
+    VkComputePipelineCreateInfo color_correct_pipeline_ci =
+        vk_lib::compute_pipeline_create_info(color_correct_pipeline_layout, color_correct_histogram_shader_stage);
+
+    VkPipeline color_correct_pipeline;
+    VK_CHECK(vkCreateComputePipelines(device, nullptr, 1, &color_correct_pipeline_ci, nullptr, &color_correct_pipeline));
+
+    ComputePipeline color_correct_comp_pipeline{};
+    color_correct_comp_pipeline.pipeline        = color_correct_pipeline;
+    color_correct_comp_pipeline.pipeline_layout = color_correct_pipeline_layout;
+    color_correct_comp_pipeline.shader          = build_exposure_histogram_shader;
+
+    renderer->color_correct_compute_pipeline = color_correct_comp_pipeline;
+}
+
+static void renderer_create_graphics_pipelines(Renderer* renderer) {
 
     VkDevice device = renderer->vk_context.device;
 
     std::array                 set_layouts          = {renderer->scene_descriptor_set_layout, renderer->asset_descriptor_set_layout};
-    VkPushConstantRange        push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_ALL, sizeof(PushConstants));
+    VkPushConstantRange        push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_ALL, sizeof(DrawPushConstants));
     std::array                 push_constant_ranges = {push_constant_range};
     VkPipelineLayoutCreateInfo layout_create_info   = vk_lib::pipeline_layout_create_info(set_layouts, push_constant_ranges);
     VkPipelineLayout           pipeline_layout;
     VK_CHECK(vkCreatePipelineLayout(device, &layout_create_info, nullptr, &pipeline_layout));
 
-    std::array                             color_attachment_formats = {color_attachment_format};
+    std::array                             color_attachment_formats = {renderer->msaa_color_image.image_format};
     const VkPipelineRenderingCreateInfoKHR rendering_create_info =
         vk_lib::pipeline_rendering_create_info(color_attachment_formats, VK_FORMAT_D32_SFLOAT);
 
@@ -125,7 +209,7 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
     std::array shadow_map_shader_stages = {shadow_map_shader_stage};
 
     std::array          shadow_map_set_layouts          = {renderer->shadow_descriptor_set_layout};
-    VkPushConstantRange shadow_map_push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstants));
+    VkPushConstantRange shadow_map_push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(DrawPushConstants));
     std::array          shadow_map_push_constant_ranges = {shadow_map_push_constant_range};
 
     VkPipelineLayoutCreateInfo shadow_map_layout_create_info =
@@ -167,7 +251,7 @@ static void renderer_create_graphics_pipeline(Renderer* renderer, VkFormat color
 
     // todo: see if i can reuse shadow desc set layout
     std::array          depth_pre_set_layouts          = {renderer->shadow_descriptor_set_layout};
-    VkPushConstantRange depth_pre_push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstants));
+    VkPushConstantRange depth_pre_push_constant_range  = vk_lib::push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, sizeof(DrawPushConstants));
     std::array          depth_pre_push_constant_ranges = {depth_pre_push_constant_range};
 
     VkPipelineLayoutCreateInfo depth_pre_layout_create_info =
@@ -253,6 +337,31 @@ static VmaAllocator allocator_create(const VkContext* vk_context) {
     return allocator;
 }
 
+static void create_compute_resources(Renderer* renderer) {
+
+    VkBufferCreateInfo histogram_buffer_ci = vk_lib::buffer_create_info(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 256 * sizeof(uint32_t));
+
+    VmaAllocationCreateInfo dev_local_buffer_allocation_ci{};
+    dev_local_buffer_allocation_ci.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    dev_local_buffer_allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    VK_CHECK(vmaCreateBuffer(renderer->allocator, &histogram_buffer_ci, &dev_local_buffer_allocation_ci, &renderer->exposure_histogram.buffer,
+                             &renderer->exposure_histogram.allocation, &renderer->exposure_histogram.allocation_info));
+
+    VkBufferDeviceAddressInfo histogram_buffer_device_ai = vk_lib::buffer_device_address_info(renderer->exposure_histogram.buffer);
+    renderer->exposure_histogram.address                 = vkGetBufferDeviceAddress(renderer->vk_context.device, &histogram_buffer_device_ai);
+
+    VkBufferCreateInfo avg_luminance_buffer_ci =
+        vk_lib::buffer_create_info(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 1 * sizeof(float));
+
+    VK_CHECK(vmaCreateBuffer(renderer->allocator, &avg_luminance_buffer_ci, &dev_local_buffer_allocation_ci, &renderer->average_luminance_buf.buffer,
+                             &renderer->average_luminance_buf.allocation, &renderer->average_luminance_buf.allocation_info));
+
+    VkBufferDeviceAddressInfo avg_luminance_buffer_device_ai = vk_lib::buffer_device_address_info(renderer->average_luminance_buf.buffer);
+    renderer->average_luminance_buf.address                  = vkGetBufferDeviceAddress(renderer->vk_context.device, &avg_luminance_buffer_device_ai);
+}
+
 static void create_render_resources(Renderer* renderer) {
     VkContext*              vk_ctx        = &renderer->vk_context;
     const SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
@@ -260,9 +369,9 @@ static void create_render_resources(Renderer* renderer) {
     VkExtent3D image_extent = vk_lib::extent_3d(swapchain_ctx->extent.width, swapchain_ctx->extent.height);
 
     // create main msaa color image
-    VkImageCreateInfo msaa_image_ci =
-        vk_lib::image_create_info(swapchain_ctx->surface_format.format, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                  image_extent, 1, 1, VK_SAMPLE_COUNT_4_BIT);
+    VkFormat          hdr_format    = VK_FORMAT_R32G32B32A32_SFLOAT;
+    VkImageCreateInfo msaa_image_ci = vk_lib::image_create_info(hdr_format, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                                image_extent, 1, 1, VK_SAMPLE_COUNT_4_BIT);
 
     VmaAllocationCreateInfo allocation_ci{};
     allocation_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -270,13 +379,26 @@ static void create_render_resources(Renderer* renderer) {
     VK_CHECK(vmaCreateImage(renderer->allocator, &msaa_image_ci, &allocation_ci, &renderer->msaa_color_image.image,
                             &renderer->msaa_color_image.allocation, &renderer->msaa_color_image.allocation_info));
 
-    renderer->msaa_color_image.image_format = swapchain_ctx->surface_format.format;
+    renderer->msaa_color_image.image_format = hdr_format;
 
-    VkImageSubresourceRange msaa_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+    VkImageSubresourceRange color_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
-    VkImageViewCreateInfo msaa_image_view_ci =
-        vk_lib::image_view_create_info(swapchain_ctx->surface_format.format, renderer->msaa_color_image.image, &msaa_subresource_range);
+    VkImageViewCreateInfo msaa_image_view_ci = vk_lib::image_view_create_info(hdr_format, renderer->msaa_color_image.image, &color_subresource_range);
     vkCreateImageView(vk_ctx->device, &msaa_image_view_ci, nullptr, &renderer->msaa_color_image.image_view);
+
+    // create resolve image for hdr msaa image
+    VkImageCreateInfo resolve_image_ci = vk_lib::image_create_info(
+        hdr_format, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+        image_extent);
+
+    VK_CHECK(vmaCreateImage(renderer->allocator, &resolve_image_ci, &allocation_ci, &renderer->resolve_color_image.image,
+                            &renderer->resolve_color_image.allocation, &renderer->resolve_color_image.allocation_info));
+
+    renderer->resolve_color_image.image_format = hdr_format;
+
+    VkImageViewCreateInfo resolve_image_view_ci =
+        vk_lib::image_view_create_info(hdr_format, renderer->resolve_color_image.image, &color_subresource_range);
+    vkCreateImageView(vk_ctx->device, &resolve_image_view_ci, nullptr, &renderer->resolve_color_image.image_view);
 
     // create depth image for the msaa color image. requires sample sample count
     VkImageCreateInfo depth_image_ci =
@@ -327,6 +449,9 @@ static void renderer_create_shadow_map(Renderer* renderer) {
 static void destroy_render_resources(Renderer* renderer) {
     vmaDestroyImage(renderer->allocator, renderer->msaa_color_image.image, renderer->msaa_color_image.allocation);
     vkDestroyImageView(renderer->vk_context.device, renderer->msaa_color_image.image_view, nullptr);
+
+    vmaDestroyImage(renderer->allocator, renderer->resolve_color_image.image, renderer->resolve_color_image.allocation);
+    vkDestroyImageView(renderer->vk_context.device, renderer->resolve_color_image.image_view, nullptr);
 
     vmaDestroyImage(renderer->allocator, renderer->depth_image.image, renderer->depth_image.allocation);
     vkDestroyImageView(renderer->vk_context.device, renderer->depth_image.image_view, nullptr);
@@ -401,17 +526,19 @@ static void renderer_add_textures(Renderer* renderer, std::span<Texture> texture
 static void renderer_init_shader_data(Renderer* renderer) {
     const VkContext* vk_ctx = &renderer->vk_context;
 
-    constexpr uint32_t variable_texture_count = 100;
+    constexpr uint32_t variable_texture_count = 300;
 
     VkDescriptorPoolSize       shadow_scene_data_pool_size   = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
     VkDescriptorPoolSize       scene_data_pool_size          = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3);
     VkDescriptorPoolSize       shadow_map_textures_pool_size = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
     VkDescriptorPoolSize       materials_pool_size           = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+    VkDescriptorPoolSize       histogram_pool_size           = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+    VkDescriptorPoolSize       color_correct_pool_size       = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1);
     VkDescriptorPoolSize       textures_pool_size = vk_lib::descriptor_pool_size(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, variable_texture_count);
     std::array                 pool_sizes = {shadow_scene_data_pool_size, scene_data_pool_size, shadow_map_textures_pool_size, materials_pool_size,
-                                             textures_pool_size};
+                                             textures_pool_size,          histogram_pool_size,  color_correct_pool_size};
     VkDescriptorPoolCreateInfo descriptor_pool_ci =
-        vk_lib::descriptor_pool_create_info(7, pool_sizes, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+        vk_lib::descriptor_pool_create_info(9, pool_sizes, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
 
     VK_CHECK(vkCreateDescriptorPool(vk_ctx->device, &descriptor_pool_ci, nullptr, &renderer->descriptor_pool));
 
@@ -420,6 +547,18 @@ static void renderer_init_shader_data(Renderer* renderer) {
     std::array                      shadow_layout_bindings          = {shadow_data_layout_binding};
     VkDescriptorSetLayoutCreateInfo shadow_descriptor_set_layout_ci = vk_lib::descriptor_set_layout_create_info(shadow_layout_bindings);
     vkCreateDescriptorSetLayout(vk_ctx->device, &shadow_descriptor_set_layout_ci, nullptr, &renderer->shadow_descriptor_set_layout);
+
+    // build histogram descriptor layout
+    VkDescriptorSetLayoutBinding    luminance_image_binding  = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    std::array                      build_histogram_bindings = {luminance_image_binding};
+    VkDescriptorSetLayoutCreateInfo build_histogram_set_layout_ci = vk_lib::descriptor_set_layout_create_info(build_histogram_bindings);
+    vkCreateDescriptorSetLayout(vk_ctx->device, &build_histogram_set_layout_ci, nullptr, &renderer->build_histogram_descriptor_set_layout);
+
+    // build histogram descriptor layout
+    VkDescriptorSetLayoutBinding    hdr_image_binding           = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    std::array                      color_correct_bindings      = {hdr_image_binding};
+    VkDescriptorSetLayoutCreateInfo color_correct_set_layout_ci = vk_lib::descriptor_set_layout_create_info(color_correct_bindings);
+    vkCreateDescriptorSetLayout(vk_ctx->device, &color_correct_set_layout_ci, nullptr, &renderer->color_correct_descriptor_set_layout);
 
     // main scene descriptor layout
     VkDescriptorSetLayoutBinding    scene_data_layout_binding      = vk_lib::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -450,6 +589,16 @@ static void renderer_init_shader_data(Renderer* renderer) {
     VkDescriptorSetAllocateInfo shadow_scene_desc_set_ai =
         vk_lib::descriptor_set_allocate_info(shadow_scene_set_layouts.data(), renderer->descriptor_pool, renderer->frames.size());
     VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &shadow_scene_desc_set_ai, renderer->shadow_descriptor_sets.data()));
+
+    // build exposure histogram descriptor allocation
+    VkDescriptorSetAllocateInfo histogram_desc_set_ai =
+        vk_lib::descriptor_set_allocate_info(&renderer->build_histogram_descriptor_set_layout, renderer->descriptor_pool, 1);
+    VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &histogram_desc_set_ai, &renderer->build_histogram_descriptor_set));
+
+    // color correct descriptor allocation
+    VkDescriptorSetAllocateInfo color_correct_desc_set_ai =
+        vk_lib::descriptor_set_allocate_info(&renderer->color_correct_descriptor_set_layout, renderer->descriptor_pool, 1);
+    VK_CHECK(vkAllocateDescriptorSets(vk_ctx->device, &color_correct_desc_set_ai, &renderer->color_correct_descriptor_set));
 
     // scene descriptors allocation
     std::array scene_set_layouts = {renderer->scene_descriptor_set_layout, renderer->scene_descriptor_set_layout,
@@ -829,12 +978,32 @@ bool is_visible(const DrawObject* obj, const glm::mat4& view_proj) {
     }
 }
 
+static void update_compute_descriptors(Renderer* renderer) {
+    // update exposure histogram descriptor
+    VkContext* vk_ctx = &renderer->vk_context;
+
+    // exposure histogram pipeline
+    VkDescriptorImageInfo luminance_descriptor_image_info =
+        vk_lib::descriptor_image_info(renderer->resolve_color_image.image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, renderer->default_sampler);
+    VkWriteDescriptorSet luminance_image_build_histogram_write = vk_lib::write_descriptor_set(
+        0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, renderer->build_histogram_descriptor_set, &luminance_descriptor_image_info);
+    vkUpdateDescriptorSets(vk_ctx->device, 1, &luminance_image_build_histogram_write, 0, nullptr);
+
+    // color correct pipeline
+    VkDescriptorImageInfo color_correct_image_info = vk_lib::descriptor_image_info(renderer->resolve_color_image.image_view, VK_IMAGE_LAYOUT_GENERAL);
+    VkWriteDescriptorSet  hdr_image_color_correct_write =
+        vk_lib::write_descriptor_set(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, renderer->color_correct_descriptor_set, &color_correct_image_info);
+    vkUpdateDescriptorSets(vk_ctx->device, 1, &hdr_image_color_correct_write, 0, nullptr);
+}
+
 static void renderer_resize_screen(Renderer* renderer) {
     SwapchainContext* swapchain_ctx = &renderer->swapchain_context;
     VkContext*        vk_ctx        = &renderer->vk_context;
     swapchain_context_recreate(swapchain_ctx, vk_ctx->physical_device, vk_ctx->device, vk_ctx->surface, renderer->window.glfw_window);
     destroy_render_resources(renderer);
     create_render_resources(renderer);
+
+    update_compute_descriptors(renderer);
 
     float aspect_ratio = static_cast<float>(renderer->swapchain_context.extent.width) / static_cast<float>(renderer->swapchain_context.extent.height);
     set_camera_proj(glm::radians(70.f), aspect_ratio);
@@ -861,24 +1030,6 @@ void renderer_draw(Renderer* renderer) {
     const uint32_t    frame_index   = renderer->curr_frame % swapchain_ctx->images.size();
     const Frame*      current_frame = &renderer->frames[frame_index];
 
-    // Perform Frustum Culling
-
-    // renderer->visible_opaque_draws.clear();
-    // renderer->visible_transparent_draws.clear();
-    //
-    // glm::mat4 camera_view_proj = global::camera.proj * camera_view();
-    // for (const DrawObject& opaque_obj : renderer->opaque_draws) {
-    //     if (is_visible(&opaque_obj, camera_view_proj)) {
-    //         renderer->visible_opaque_draws.push_back(opaque_obj);
-    //     }
-    // }
-
-    // for (const DrawObject& transparent_obj : renderer->transparent_draws) {
-    //     if (is_visible(&transparent_obj, camera_view_proj)) {
-    //         renderer->visible_transparent_draws.push_back(transparent_obj);
-    //     }
-    // }
-
     VkCommandBuffer command_buffer = current_frame->command_buffer;
 
     VK_CHECK(vkWaitForFences(vk_ctx->device, 1, &current_frame->in_flight_fence, true, UINT64_MAX));
@@ -894,9 +1045,6 @@ void renderer_draw(Renderer* renderer) {
         renderer_resize_screen(renderer);
         return;
     }
-
-    VkImage     swapchain_image      = swapchain_ctx->images[swapchain_image_index];
-    VkImageView swapchain_image_view = swapchain_ctx->image_views[swapchain_image_index];
 
     const VkImageSubresourceRange depth_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT);
     const VkImageSubresourceRange color_subresource_range = vk_lib::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
@@ -950,7 +1098,7 @@ void renderer_draw(Renderer* renderer) {
                             &renderer->shadow_descriptor_sets[frame_index], 0, nullptr);
 
     for (const DrawObject& opaque_draw : renderer->opaque_draws) {
-        PushConstants push_constants{};
+        DrawPushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
@@ -959,7 +1107,7 @@ void renderer_draw(Renderer* renderer) {
         vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
 
         vkCmdPushConstants(command_buffer, renderer->shadow_map_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(PushConstants), &push_constants);
+                           sizeof(DrawPushConstants), &push_constants);
 
         vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
         vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
@@ -994,7 +1142,7 @@ void renderer_draw(Renderer* renderer) {
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->depth_pre_graphics_pipeline.pipeline_layout, 0, 1,
                             &renderer->scene_descriptor_sets[frame_index], 0, nullptr);
     for (const DrawObject& opaque_draw : renderer->opaque_draws) {
-        PushConstants push_constants{};
+        DrawPushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
@@ -1003,7 +1151,7 @@ void renderer_draw(Renderer* renderer) {
         vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
 
         vkCmdPushConstants(command_buffer, renderer->depth_pre_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(PushConstants), &push_constants);
+                           sizeof(DrawPushConstants), &push_constants);
 
         vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
         vkCmdDrawIndexed(command_buffer, opaque_draw.index_count, 1, 0, 0, 0);
@@ -1027,9 +1175,9 @@ void renderer_draw(Renderer* renderer) {
         VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
     const VkImageMemoryBarrier2 resolve_draw_image_memory_barrier =
-        vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-                                       VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        vk_lib::image_memory_barrier_2(renderer->resolve_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED,
+                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
     std::array draw_image_memory_barriers = {msaa_draw_image_memory_barrier, resolve_draw_image_memory_barrier, shadow_map_write_image_memory_barrier,
                                              depth_pre_write_image_memory_barrier};
@@ -1043,14 +1191,17 @@ void renderer_draw(Renderer* renderer) {
 
     // main pass
 
+    glm::vec3 sky_color = {0.53, 0.81, 0.92};
+    sky_color *= 10000.f; // illuminance
+
     VkClearValue color_clear_value{};
     // color_clear_value.color = {0.01, 0.01, 0.01, 0};
     // sky blue
-    color_clear_value.color = {0.53, 0.81, 0.92, 0};
+    color_clear_value.color = {sky_color.x, sky_color.y, sky_color.z, 0};
 
     VkRenderingAttachmentInfo color_attachment_info = vk_lib::rendering_attachment_info(
         renderer->msaa_color_image.image_view, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_CLEAR,
-        VK_ATTACHMENT_STORE_OP_DONT_CARE, &color_clear_value, VK_RESOLVE_MODE_AVERAGE_BIT, swapchain_image_view);
+        VK_ATTACHMENT_STORE_OP_DONT_CARE, &color_clear_value, VK_RESOLVE_MODE_AVERAGE_BIT, renderer->resolve_color_image.image_view);
 
     std::array color_attachment_infos = {color_attachment_info};
 
@@ -1066,7 +1217,7 @@ void renderer_draw(Renderer* renderer) {
                             desc_sets.data(), 0, nullptr);
 
     for (const DrawObject& opaque_draw : renderer->opaque_draws) {
-        PushConstants push_constants{};
+        DrawPushConstants push_constants{};
         push_constants.model_transform    = opaque_draw.transform;
         push_constants.vertex_buf_address = opaque_draw.vertex_buffer.address;
         push_constants.material_index     = opaque_draw.material_index;
@@ -1075,7 +1226,7 @@ void renderer_draw(Renderer* renderer) {
 
         vkCmdSetFrontFace(command_buffer, opaque_draw.front_face);
 
-        vkCmdPushConstants(command_buffer, renderer->opaque_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants),
+        vkCmdPushConstants(command_buffer, renderer->opaque_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(DrawPushConstants),
                            &push_constants);
 
         vkCmdBindIndexBuffer(command_buffer, opaque_draw.index_buffer.buffer, 0, opaque_draw.index_type);
@@ -1085,7 +1236,7 @@ void renderer_draw(Renderer* renderer) {
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->transparent_graphics_pipeline.pipeline);
 
     for (const DrawObject& transparent_draw : renderer->transparent_draws) {
-        PushConstants push_constants{};
+        DrawPushConstants push_constants{};
         push_constants.model_transform    = transparent_draw.transform;
         push_constants.vertex_buf_address = transparent_draw.vertex_buffer.address;
         push_constants.material_index     = transparent_draw.material_index;
@@ -1094,7 +1245,7 @@ void renderer_draw(Renderer* renderer) {
 
         vkCmdSetFrontFace(command_buffer, transparent_draw.front_face);
 
-        vkCmdPushConstants(command_buffer, renderer->transparent_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants),
+        vkCmdPushConstants(command_buffer, renderer->transparent_graphics_pipeline.pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(DrawPushConstants),
                            &push_constants);
 
         vkCmdBindIndexBuffer(command_buffer, transparent_draw.index_buffer.buffer, 0, transparent_draw.index_type);
@@ -1103,13 +1254,142 @@ void renderer_draw(Renderer* renderer) {
 
     vkCmdEndRenderingKHR(command_buffer);
 
-    const VkImageMemoryBarrier2 resolve_present_image_memory_barrier =
-        vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
-                                       VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_NONE);
+    // POST PROCESSING
 
-    const VkDependencyInfo present_dependency_info = vk_lib::dependency_info(&resolve_present_image_memory_barrier, nullptr, nullptr);
-    vkCmdPipelineBarrier2(command_buffer, &present_dependency_info);
+    // generate exposure histogram
+
+    vkCmdFillBuffer(command_buffer, renderer->exposure_histogram.buffer, 0, VK_WHOLE_SIZE, 0);
+
+    const VkImageMemoryBarrier2 luminance_read_image_memory_barrier =
+        vk_lib::image_memory_barrier_2(renderer->resolve_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+                                       VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+
+    const VkBufferMemoryBarrier2 histogram_write_buffer_memory_barrier =
+        vk_lib::buffer_memory_barrier_2(renderer->exposure_histogram.buffer, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                        VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    const VkDependencyInfo build_histogram_dependency_info =
+        vk_lib::dependency_info(&luminance_read_image_memory_barrier, &histogram_write_buffer_memory_barrier, nullptr);
+
+    vkCmdPipelineBarrier2(command_buffer, &build_histogram_dependency_info);
+
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, renderer->build_exposure_hist_compute_pipeline.pipeline);
+
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, renderer->build_exposure_hist_compute_pipeline.pipeline_layout, 0, 1,
+                            &renderer->build_histogram_descriptor_set, 0, nullptr);
+
+    BuildHistPushConstants histogram_constants;
+    histogram_constants.histogram_buf_address = renderer->exposure_histogram.address;
+    histogram_constants.view_width            = renderer->swapchain_context.extent.width;
+    histogram_constants.view_height           = renderer->swapchain_context.extent.height;
+
+    vkCmdPushConstants(command_buffer, renderer->build_exposure_hist_compute_pipeline.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                       sizeof(BuildHistPushConstants), &histogram_constants);
+
+    uint32_t width         = renderer->swapchain_context.extent.width;
+    uint32_t height        = renderer->swapchain_context.extent.height;
+    uint32_t work_groups_x = width / 16;
+    uint32_t work_groups_y = height / 16;
+    if (width % 16 != 0) {
+        work_groups_x++;
+    }
+    if (height % 16 != 0) {
+        work_groups_y++;
+    }
+
+    vkCmdDispatch(command_buffer, work_groups_x, work_groups_y, 1);
+
+    // find exposure histogram average luminance
+
+    const VkBufferMemoryBarrier2 histogram_read_buffer_memory_barrier =
+        vk_lib::buffer_memory_barrier_2(renderer->exposure_histogram.buffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+
+    const VkBufferMemoryBarrier2 avg_luminance_buffer_write_memory_barrier =
+        vk_lib::buffer_memory_barrier_2(renderer->average_luminance_buf.buffer, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                        VK_ACCESS_2_NONE, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    std::array avg_luminance_mem_barriers = {histogram_read_buffer_memory_barrier, avg_luminance_buffer_write_memory_barrier};
+
+    const VkDependencyInfo avg_exposure_histogram_dependency_info = vk_lib::dependency_info_batch({}, avg_luminance_mem_barriers, {});
+
+    vkCmdPipelineBarrier2(command_buffer, &avg_exposure_histogram_dependency_info);
+
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, renderer->average_exposure_hist_compute_pipeline.pipeline);
+
+    AverageHistPushConstants avg_hist_push_constants{};
+    avg_hist_push_constants.pixel_count               = width * height;
+    avg_hist_push_constants.histogram_buf_address     = renderer->exposure_histogram.address;
+    avg_hist_push_constants.luminance_avg_buf_address = renderer->average_luminance_buf.address;
+    avg_hist_push_constants.delta_time                = renderer->frame_time;
+
+    vkCmdPushConstants(command_buffer, renderer->average_exposure_hist_compute_pipeline.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                       sizeof(AverageHistPushConstants), &avg_hist_push_constants);
+
+    vkCmdDispatch(command_buffer, 1, 1, 1);
+
+    // final color correction (exposure and tone mapping)
+
+    const VkBufferMemoryBarrier2 avg_luminance_read_buffer_memory_barrier =
+        vk_lib::buffer_memory_barrier_2(renderer->average_luminance_buf.buffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+
+    const VkImageMemoryBarrier2 hdr_image_correction_memory_barrier =
+        vk_lib::image_memory_barrier_2(renderer->resolve_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                       VK_ACCESS_2_SHADER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    const VkDependencyInfo color_correct_dependency_info =
+        vk_lib::dependency_info(&hdr_image_correction_memory_barrier, &avg_luminance_read_buffer_memory_barrier, nullptr);
+
+    vkCmdPipelineBarrier2(command_buffer, &color_correct_dependency_info);
+
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, renderer->color_correct_compute_pipeline.pipeline);
+
+    ColorCorrectPushConstants color_correct_push_constants{};
+    color_correct_push_constants.luminance_avg_buf_address = renderer->average_luminance_buf.address;
+
+    vkCmdPushConstants(command_buffer, renderer->color_correct_compute_pipeline.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                       sizeof(ColorCorrectPushConstants), &color_correct_push_constants);
+
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, renderer->color_correct_compute_pipeline.pipeline_layout, 0, 1,
+                            &renderer->color_correct_descriptor_set, 0, nullptr);
+
+    vkCmdDispatch(command_buffer, work_groups_x, work_groups_y, 1);
+
+    // copy final resolve image to the swapchain
+
+    const VkImageMemoryBarrier2 resolve_transfer_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        renderer->resolve_color_image.image, color_subresource_range, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_ACCESS_2_MEMORY_READ_BIT);
+
+    VkImage swapchain_image = swapchain_ctx->images[swapchain_image_index];
+
+    const VkImageMemoryBarrier2 swapchain_transfer_image_memory_barrier =
+        vk_lib::image_memory_barrier_2(swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                       VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_NONE, VK_ACCESS_2_MEMORY_WRITE_BIT);
+
+    std::array present_transfer_barriers = {resolve_transfer_image_memory_barrier, swapchain_transfer_image_memory_barrier};
+
+    const VkDependencyInfo present_transfer_dependency_info = vk_lib::dependency_info_batch(present_transfer_barriers, {}, {});
+
+    vkCmdPipelineBarrier2(command_buffer, &present_transfer_dependency_info);
+
+    VkImageSubresourceLayers image_subresource_layers = vk_lib::image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT);
+    std::array               blit_offsets  = {vk_lib::offset_3d(), vk_lib::offset_3d(static_cast<int32_t>(renderer->swapchain_context.extent.width),
+                                                                                     static_cast<int32_t>(renderer->swapchain_context.extent.height), 1)};
+    VkImageBlit presentation_transfer_blit = vk_lib::image_blit(image_subresource_layers, image_subresource_layers, blit_offsets, blit_offsets);
+
+    vkCmdBlitImage(command_buffer, renderer->resolve_color_image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain_image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &presentation_transfer_blit, VK_FILTER_LINEAR);
+
+    const VkImageMemoryBarrier2 swapchain_present_image_memory_barrier = vk_lib::image_memory_barrier_2(
+        swapchain_image, color_subresource_range, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_BLIT_BIT,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
+
+    VkDependencyInfo swapchain_present_dependency_info = vk_lib::dependency_info(&swapchain_present_image_memory_barrier, nullptr, nullptr);
+    vkCmdPipelineBarrier2(command_buffer, &swapchain_present_dependency_info);
 
     VK_CHECK(vkEndCommandBuffer(command_buffer));
 
@@ -1170,7 +1450,7 @@ void renderer_recompile_pipelines(Renderer* renderer) {
         vkDestroyPipelineLayout(device, renderer->depth_pre_graphics_pipeline.pipeline_layout, nullptr);
     }
 
-    renderer_create_graphics_pipeline(renderer, renderer->swapchain_context.surface_format.format);
+    renderer_create_graphics_pipelines(renderer);
 }
 
 void renderer_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -1212,7 +1492,13 @@ void renderer_create(Renderer* renderer) {
 
     renderer_create_shadow_map(renderer);
 
-    renderer_create_graphics_pipeline(renderer, swapchain_ctx->surface_format.format);
+    renderer_create_graphics_pipelines(renderer);
+
+    create_compute_resources(renderer);
+
+    renderer_create_compute_pipelines(renderer);
+
+    update_compute_descriptors(renderer);
 
     // renderer_add_gltf_asset(renderer, "../assets/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
     // renderer_add_gltf_asset(renderer, "../assets/main1_sponza/NewSponza_Main_glTF_003.gltf");

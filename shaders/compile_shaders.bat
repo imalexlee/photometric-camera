@@ -57,7 +57,7 @@ for %%f in (*.frag) do (
 :: Compile all compute shaders
 for %%f in (*.comp) do (
     echo Compiling compute shader: %%f
-    "%GLSLC_PATH%" -V "%%f" -o "%%f.spv" -gVS
+    "%GLSLC_PATH%" -V "%%f" -o "%%f.spv"
     if !errorlevel! neq 0 (
         echo Error compiling %%f
         set /a ERROR_COUNT+=1

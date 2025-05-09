@@ -34,7 +34,8 @@ SwapchainContext swapchain_context_create(VkPhysicalDevice physical_device, VkDe
     }
 
     VkSwapchainCreateInfoKHR swapchain_ci =
-        vk_lib::swapchain_create_info(surface, image_count, format.format, format.colorSpace, swapchain_extent, capabilities.currentTransform);
+        vk_lib::swapchain_create_info(surface, image_count, format.format, format.colorSpace, swapchain_extent, capabilities.currentTransform,
+                                      VK_PRESENT_MODE_FIFO_KHR, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     VkSwapchainKHR swapchain;
     VK_CHECK(vkCreateSwapchainKHR(device, &swapchain_ci, nullptr, &swapchain));
 

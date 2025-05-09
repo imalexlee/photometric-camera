@@ -1,0 +1,51 @@
+#version 450
+#extension GL_EXT_buffer_reference: enable
+#extension GL_EXT_scalar_block_layout: enable
+
+layout (scalar, buffer_reference) buffer Histogram {
+    uint bins[];
+};
+
+// single element array to store final luminance value
+layout (scalar, buffer_reference) buffer LuminanceValue {
+    float luminance[];
+};
+
+layout (push_constant) uniform PushConstants {
+    Histogram       histogram;
+    LuminanceValue  luminance_buf;
+    uint            pixel_count;
+    float           delta_time;
+} constants;
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+const uint NUM_HISTOGRAM_BINS  = 256;
+shared float histogram_shared[NUM_HISTOGRAM_BINS];
+
+void main() {
+    const uint local_idx = gl_LocalInvocationIndex;
+
+    float count_for_this_bin = float(constants.histogram.bins[local_idx]);
+    histogram_shared[local_idx] = count_for_this_bin * float(local_idx);
+
+    barrier();
+
+    for (uint hist_sample_idx = (NUM_HISTOGRAM_BINS >> 1); hist_sample_idx > 0; hist_sample_idx >>= 1){
+        if (local_idx < hist_sample_idx){
+            histogram_shared[local_idx] += histogram_shared[local_idx + hist_sample_idx];
+        }
+
+        barrier();
+    }
+
+    if (local_idx == 0){
+        const float min_log_luminance = -1.0;
+        const float log_luminance_range = 15.0;
+        float weighted_log_average = (histogram_shared[0].x / max(float(constants.pixel_count) - count_for_this_bin, 1.f)) - 1.f;
+        float weighted_average_luminance = exp2(((weighted_log_average / 254.f) * log_luminance_range) + min_log_luminance);
+        float luminance_last_frame = constants.luminance_buf.luminance[0];
+        float adapted_luminance = luminance_last_frame + (weighted_average_luminance - luminance_last_frame) * (1 - exp(-constants.delta_time * 1.1));
+        constants.luminance_buf.luminance[0] = adapted_luminance;
+    }
+}

@@ -1,0 +1,60 @@
+#version 450
+#extension GL_EXT_buffer_reference: enable
+#extension GL_EXT_scalar_block_layout: enable
+
+layout (binding = 0, rgba32f) uniform image2D hdr_image;
+
+// pointer to a single float representing average luminance in the scene
+layout (scalar, buffer_reference) buffer readonly AverageLuminance {
+    float luminance[];
+};
+
+layout (push_constant) uniform PushConstants {
+    AverageLuminance luminance_buf;
+} constants;
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+float convert_EV100_to_exposure(float EV100) {
+    // Compute the maximum luminance possible with H_sbs sensitivity
+    // maxLum = 78 / ( S * q ) * N ^2 / t
+    // = 78 / ( S * q ) * 2^ EV_100
+    // = 78 / (100 * 0.65) * 2^ EV_100
+    // = 1.2 * 2^ EV
+    // Reference : http :// en . wikipedia . org / wiki / Film_speed
+    float max_luminance = 1.2f * pow(2.f, EV100);
+    return max_luminance;
+}
+
+vec3 ACESFilm(vec3 x)
+{
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.f, 1.f);
+}
+
+void main() {
+    const uint local_idx = gl_LocalInvocationIndex;
+    const ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
+    const ivec2 image_extent = imageSize(hdr_image);
+
+    if (pixel_coords.x >= image_extent.x || pixel_coords.y >= image_extent.y){
+        return;
+    }
+
+    vec4 hdr_color = imageLoad(hdr_image, pixel_coords);
+    if (hdr_color.a == 0){
+        //        return;
+    }
+
+    float EV100 = log2(constants.luminance_buf.luminance[0] * 100.f / 12.5);
+    float exposure = convert_EV100_to_exposure(EV100);
+
+    vec3 corrected_color = hdr_color.rgb / exposure;
+    corrected_color = ACESFilm(corrected_color);
+
+    imageStore(hdr_image, pixel_coords, vec4(corrected_color, hdr_color.a));
+}
