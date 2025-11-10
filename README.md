@@ -1,4 +1,5 @@
 # Photometric Camera
+[YouTube video over this!](https://youtu.be/sqqp30VeN0U?si=tIz7eI6eV4fOW8LY)
 
 ![Screenshot 2025-05-01 234723](https://github.com/user-attachments/assets/f9535d01-95eb-4280-a5d9-05d7cec4533f)
 
